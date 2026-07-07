@@ -1,18 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { AlertTriangle, BookOpen, ChevronRight, Phone, Award, ShieldAlert, User, Smartphone, FileText, Video, ExternalLink, Clock } from 'lucide-react';
+import { AlertTriangle, BookOpen, ChevronRight, Phone, Award, ShieldAlert, User, Smartphone, FileText, Video, ExternalLink, Clock, Mail, Globe, MapPin } from 'lucide-react';
+import { examService } from '../services/examService';
 
 interface StartScreenProps {
   onRegister: (fullName: string, phone: string, examId: string) => Promise<{ success: boolean; error?: string }>;
   loading: boolean;
   onAdminClick?: () => void;
-  settings?: {
-    logoUrl?: string;
-    themeColor?: string;
-    slogan?: string;
-    teacherPhone?: string;
-    teacherEmail?: string;
-  };
+  settings?: any;
 }
 
 export default function StartScreen({ onRegister, loading, onAdminClick, settings = {} }: StartScreenProps) {
@@ -21,14 +16,21 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
   const [error, setError] = useState('');
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [showTeacherContact, setShowTeacherContact] = useState(false);
-  const [materials, setMaterials] = useState<any[]>([]);
+  const [showPhoneOptions, setShowPhoneOptions] = useState(false);
   const [exams, setExams] = useState<any[]>([]);
   const [selectedExamId, setSelectedExamId] = useState('default-exam');
   const [isExamLocked, setIsExamLocked] = useState(false);
 
   useEffect(() => {
+    // 1. Check path first: e.g. /exam/abc123xyz
+    const pathMatch = window.location.pathname.match(/\/exam\/([a-zA-Z0-9_-]+)/);
+    const pathExamId = pathMatch ? pathMatch[1] : null;
+
+    // 2. Fallback to query param
     const params = new URLSearchParams(window.location.search);
-    const lockedExamId = params.get('examId');
+    const queryExamId = params.get('examId');
+
+    const lockedExamId = pathExamId || queryExamId;
     if (lockedExamId) {
       setSelectedExamId(lockedExamId);
       setIsExamLocked(true);
@@ -36,29 +38,21 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
   }, []);
 
   useEffect(() => {
-    fetch('/api/materials')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.materials) {
-          setMaterials(data.materials);
-        }
-      })
-      .catch((err) => console.error('Error fetching materials:', err));
+    examService.getExams()
+      .then((eList) => {
+        setExams(eList);
+        // Only overwrite if exam isn't locked by URL query/path
+        const pathMatch = window.location.pathname.match(/\/exam\/([a-zA-Z0-9_-]+)/);
+        const pathExamId = pathMatch ? pathMatch[1] : null;
+        const params = new URLSearchParams(window.location.search);
+        const queryExamId = params.get('examId');
+        const lockedExamId = pathExamId || queryExamId;
 
-    fetch('/api/exams')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.exams) {
-          setExams(data.exams);
-          // Only overwrite if exam isn't locked by URL query
-          const params = new URLSearchParams(window.location.search);
-          const lockedExamId = params.get('examId');
-          if (lockedExamId) {
-            setSelectedExamId(lockedExamId);
-            setIsExamLocked(true);
-          } else if (data.exams.length > 0) {
-            setSelectedExamId(data.exams[0].id);
-          }
+        if (lockedExamId) {
+          setSelectedExamId(lockedExamId);
+          setIsExamLocked(true);
+        } else if (eList.length > 0) {
+          setSelectedExamId(eList[0].id);
         }
       })
       .catch((err) => console.error('Error fetching exams:', err));
@@ -84,6 +78,12 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
       return;
     }
 
+    const selectedExam = exams.find((e) => e.id === selectedExamId);
+    if (selectedExam?.isClosed) {
+      setError('Kỳ thi này hiện đang đóng. Bạn không thể đăng ký tham gia thi.');
+      return;
+    }
+
     const res = await onRegister(fullName, phone, selectedExamId);
     if (!res.success && res.error) {
       setError(res.error);
@@ -91,7 +91,7 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
   };
 
   return (
-    <div id="start-screen-container" className="min-h-screen bg-slate-50 flex flex-col justify-between">
+    <div id="start-screen-container" className="min-h-screen bg-slate-50 dark:bg-[#0b111e] flex flex-col justify-between">
       {/* Top Banner Accent */}
       <div className="h-2 bg-indigo-900 w-full" />
 
@@ -121,25 +121,25 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
               )}
             </div>
 
-            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-indigo-950 mb-3 uppercase">
+            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-indigo-950 dark:text-slate-100 mb-3 uppercase">
               ENGLISH PLACEMENT TEST
             </h1>
-            <p className="text-xl text-slate-600 font-medium mb-8 font-sans max-w-xl mx-auto">
+            <p className="text-xl text-slate-600 dark:text-slate-300 font-medium mb-8 font-sans max-w-xl mx-auto">
               {settings.slogan || 'Your English Journey Starts Here.'}
             </p>
 
             {/* Anti-fraud Red Warning */}
             <div
               id="anti-cheat-warning"
-              className="bg-red-50 border-l-4 border-red-600 p-5 rounded-r-xl max-w-2xl mx-auto text-left mb-10 shadow-sm"
+              className="bg-red-50 dark:bg-red-950/20 border-l-4 border-red-600 dark:border-red-500 p-5 rounded-r-xl max-w-2xl mx-auto text-left mb-10 shadow-sm"
             >
               <div className="flex items-start">
-                <ShieldAlert className="w-6 h-6 text-red-600 shrink-0 mr-3 mt-0.5" />
+                <ShieldAlert className="w-6 h-6 text-red-600 dark:text-red-400 shrink-0 mr-3 mt-0.5" />
                 <div>
-                  <h3 className="text-red-900 font-bold text-lg mb-1 uppercase tracking-wide">
+                  <h3 className="text-red-900 dark:text-red-200 font-bold text-lg mb-1 uppercase tracking-wide">
                     Cảnh báo quan trọng cho thí sinh
                   </h3>
-                  <p className="text-red-700 text-sm leading-relaxed">
+                  <p className="text-red-700 dark:text-red-400 text-sm leading-relaxed">
                     Thí sinh <strong>không được sử dụng từ điển, AI, công cụ dịch thuật</strong> hoặc nhờ người khác hỗ trợ. 
                     Nếu không biết đáp án, hãy bỏ qua và tiếp tục làm bài. Hệ thống có cơ chế <strong>giám sát và khóa bài thi</strong> nếu phát hiện hành vi gian lận hoặc chuyển tab liên tục.
                   </p>
@@ -147,121 +147,219 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="flex flex-col sm:flex-row justify-center gap-4 max-w-md mx-auto">
-              <button
-                id="start-test-btn"
-                onClick={() => setShowRegisterForm(true)}
-                className="flex-1 bg-indigo-900 hover:bg-indigo-800 text-white font-semibold py-4 px-8 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center text-lg gap-2 cursor-pointer"
-              >
-                Start Test <ChevronRight className="w-5 h-5" />
-              </button>
-              
-              <button
-                id="contact-teacher-btn"
-                onClick={() => setShowTeacherContact(!showTeacherContact)}
-                className="flex-1 bg-white border-2 border-indigo-900 hover:bg-indigo-50 text-indigo-900 font-semibold py-4 px-6 rounded-xl transition-all duration-200 flex items-center justify-center text-lg gap-2 cursor-pointer"
-              >
-                <Phone className="w-5 h-5" /> Contact Teacher
-              </button>
-            </div>
-
-            {/* Teacher Contact Info */}
-            {showTeacherContact && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                className="mt-6 p-5 bg-indigo-50 rounded-xl text-indigo-950 font-semibold shadow-inner max-w-md mx-auto border border-indigo-100 space-y-4"
-                id="teacher-contact-info"
-              >
-                <div className="text-xs text-slate-500 uppercase tracking-wider font-bold">
-                  Kênh liên hệ hỗ trợ trực tiếp từ Giáo viên
+            {/* Actions / Closed Exam Alert */}
+            {exams.length > 0 && exams.find((e) => e.id === selectedExamId)?.isClosed ? (
+              <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 p-6 rounded-2xl max-w-xl mx-auto text-center space-y-4 shadow-sm mb-6">
+                <div className="flex justify-center">
+                  <div className="bg-red-100 text-red-700 p-3 rounded-full">
+                    <ShieldAlert className="w-8 h-8" />
+                  </div>
                 </div>
-                
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <a
-                    href={`tel:${settings.teacherPhone || '0987.654.321'}`}
-                    className="flex items-center justify-center gap-1.5 p-3 bg-white border border-indigo-200 hover:bg-indigo-100/55 rounded-lg text-indigo-950 shadow-xs transition-all cursor-pointer"
-                  >
-                    <Phone className="w-4 h-4 text-indigo-900" /> Gọi Hotline
-                  </a>
-                  <a
-                    href={`https://zalo.me/${(settings.teacherPhone || '0987.654.321').replace(/[^0-9]/g, '')}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-1.5 p-3 bg-white border border-indigo-250 hover:bg-indigo-100/55 rounded-lg text-indigo-950 shadow-xs transition-all cursor-pointer font-bold"
-                  >
-                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-indigo-900 shrink-0"><path d="M12 2C6.48 2 2 6.48 2 12c0 1.22.22 2.39.63 3.48L1.05 21.1a1 1 0 0 0 1.25 1.25l5.62-1.58C9.01 21.18 10.47 21.5 12 21.5c5.52 0 10-4.48 10-10S17.52 2 12 2zm3.17 12.33c-.33-.17-.67-.33-1-.5-.17-.08-.33-.08-.5.08-.33.33-.67.67-1 .83-.17.08-.33.08-.5-.08a5.54 5.54 0 0 1-2.17-2.17c-.08-.17-.08-.33.08-.5.17-.33.5-.67.83-1 .17-.17.17-.33.08-.5-.17-.33-.33-.67-.5-1-.08-.17-.25-.17-.42-.17H11a1.27 1.27 0 0 0-1.08.67A4.27 4.27 0 0 0 9.5 12c0 2.22 1.78 4 4 4a4.27 4.27 0 0 0 2.33-.42 1.27 1.27 0 0 0 .67-1.08c0-.17 0-.33-.17-.5l-.16.33z"/></svg>
-                    Zalo Chat
-                  </a>
-                  <a
-                    href={`sms:${settings.teacherPhone || '0987.654.321'}`}
-                    className="flex items-center justify-center gap-1.5 p-3 bg-white border border-indigo-200 hover:bg-indigo-100/55 rounded-lg text-indigo-950 shadow-xs transition-all cursor-pointer"
-                  >
-                    <Smartphone className="w-4 h-4 text-indigo-900" /> Nhắn tin SMS
-                  </a>
-                  <a
-                    href={`mailto:${settings.teacherEmail || 'teacher@english.edu.vn'}`}
-                    className="flex items-center justify-center gap-1.5 p-3 bg-white border border-indigo-200 hover:bg-indigo-100/55 rounded-lg text-indigo-950 shadow-xs transition-all cursor-pointer"
-                  >
-                    <ExternalLink className="w-4 h-4 text-indigo-900" /> Gửi Email
-                  </a>
-                </div>
-                
-                <p className="text-xs font-normal text-slate-500 mt-2">
-                  (Click chọn kênh liên hệ nếu bạn gặp sự cố kỹ thuật hoặc lỗi đường truyền audio)
+                <h3 className="text-red-900 dark:text-red-200 font-extrabold text-lg uppercase tracking-wide">
+                  Kỳ thi này hiện đang đóng
+                </h3>
+                <p className="text-red-700 dark:text-red-400 text-xs leading-relaxed max-w-md mx-auto">
+                  Kỳ thi <strong>{exams.find((e) => e.id === selectedExamId)?.title || selectedExamId}</strong> đã tạm khóa hoặc kết thúc thời gian nhận bài. Quý phụ huynh và học sinh vui lòng liên hệ Giáo viên quản trị theo thông tin dưới đây để được hướng dẫn thêm.
                 </p>
-              </motion.div>
-            )}
 
-            {/* Study Materials Reference Section */}
-            {materials.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="mt-12 text-left max-w-2xl mx-auto border-t border-slate-200 pt-8"
-              >
-                <div className="flex items-center gap-2 mb-4">
-                  <BookOpen className="w-5 h-5 text-indigo-900" />
-                  <h3 className="text-lg font-extrabold text-indigo-950 uppercase tracking-wide">
-                    TÀI LIỆU ÔN TẬP BỔ TRỢ
-                  </h3>
-                </div>
-                <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                  Quý phụ huynh và học sinh có thể tham khảo các tài liệu học tập, luyện thi hoặc đề cương bám sát chương trình do Giáo viên đăng tải dưới đây để củng cố kiến thức trước khi làm bài thi chính thức.
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {materials.map((m) => {
-                    let IconComponent = BookOpen;
-                    if (m.type === 'document') IconComponent = FileText;
-                    else if (m.type === 'video') IconComponent = Video;
-                    else if (m.type === 'link') IconComponent = ExternalLink;
+                {/* Always-visible Contact Card when closed */}
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-red-100 dark:border-slate-800 text-left space-y-3 mt-4">
+                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide border-b pb-1.5 border-slate-100 dark:border-slate-800">
+                    Thông tin liên hệ Giáo viên:
+                  </div>
+                  <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    Giáo viên phụ trách: <span className="text-indigo-950 dark:text-white font-black text-sm">{settings.teacherName || 'Teacher Anna'}</span>
+                  </div>
+                  {settings.teacherAddress && (
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                      📍 <strong>Địa chỉ:</strong> {settings.teacherAddress}
+                    </div>
+                  )}
 
-                    return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowPhoneOptions(!showPhoneOptions)}
+                        className="w-full flex items-center justify-center gap-1.5 p-2.5 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 shadow-xs text-xs font-bold cursor-pointer"
+                      >
+                        <Phone className="w-3.5 h-3.5 text-indigo-900 dark:text-indigo-400" />
+                        <span>Gọi / SMS / Zalo</span>
+                      </button>
+                      
+                      {showPhoneOptions && (
+                        <div className="absolute left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700 text-xs text-slate-700 dark:text-slate-200">
+                          <a
+                            href={`tel:${settings.teacherPhone || '0987.654.321'}`}
+                            className="flex items-center gap-2 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer font-semibold"
+                          >
+                            📞 Gọi Hotline trực tiếp
+                          </a>
+                          <a
+                            href={`sms:${settings.teacherPhone || '0987.654.321'}`}
+                            className="flex items-center gap-2 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer font-semibold"
+                          >
+                            💬 Gửi tin nhắn SMS
+                          </a>
+                          <a
+                            href={`https://zalo.me/${(settings.teacherZalo || settings.teacherPhone || '0987.654.321').replace(/[^0-9]/g, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer font-bold text-indigo-600 dark:text-indigo-400"
+                          >
+                            💬 Mở Zalo trò chuyện
+                          </a>
+                        </div>
+                      )}
+                    </div>
+
+                    <a
+                      href={`mailto:${settings.teacherEmail || 'teacher@english.edu.vn'}`}
+                      className="flex items-center justify-center gap-1.5 p-2.5 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 shadow-xs text-xs font-bold"
+                    >
+                      ✉️ Gửi Email hỗ trợ
+                    </a>
+
+                    {settings.teacherFacebook && (
                       <a
-                        key={m.id}
-                        href={m.url}
+                        href={settings.teacherFacebook}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="group flex gap-3 p-4 bg-white hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-200 rounded-xl shadow-xs transition-all duration-150 cursor-pointer"
+                        className="flex items-center justify-center gap-1.5 p-2.5 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 shadow-xs text-xs font-bold"
                       >
-                        <div className="flex-none p-2.5 bg-indigo-50 rounded-lg text-indigo-900 group-hover:bg-indigo-100/80 transition-colors h-11 w-11 flex items-center justify-center">
-                          <IconComponent className="w-5 h-5" />
-                        </div>
-                        <div className="space-y-0.5 overflow-hidden">
-                          <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide line-clamp-1 group-hover:text-indigo-900 transition-colors">
-                            {m.title}
-                          </h4>
-                          <p className="text-[11px] text-slate-500 line-clamp-2 leading-snug">
-                            {m.description || 'Không có mô tả chi tiết.'}
-                          </p>
-                        </div>
+                        🔵 Facebook Cá nhân
                       </a>
-                    );
-                  })}
+                    )}
+
+                    {settings.teacherWebsite && (
+                      <a
+                        href={settings.teacherWebsite}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-1.5 p-2.5 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 shadow-xs text-xs font-bold"
+                      >
+                        🌐 Ghé thăm Website
+                      </a>
+                    )}
+                  </div>
                 </div>
-              </motion.div>
+              </div>
+            ) : (
+              <>
+                {/* Actions when Exam is active */}
+                <div className="flex flex-col sm:flex-row justify-center gap-4 max-w-md mx-auto">
+                  <button
+                    id="start-test-btn"
+                    onClick={() => setShowRegisterForm(true)}
+                    className="flex-1 bg-indigo-900 hover:bg-indigo-800 text-white font-semibold py-4 px-8 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center text-lg gap-2 cursor-pointer"
+                  >
+                    Start Test <ChevronRight className="w-5 h-5" />
+                  </button>
+                  
+                  <button
+                    id="contact-teacher-btn"
+                    onClick={() => setShowTeacherContact(!showTeacherContact)}
+                    className="flex-1 bg-white dark:bg-slate-800 border-2 border-indigo-900 dark:border-slate-700 hover:bg-indigo-50 dark:hover:bg-slate-700 text-indigo-900 dark:text-slate-200 font-semibold py-4 px-6 rounded-xl transition-all duration-200 flex items-center justify-center text-lg gap-2 cursor-pointer"
+                  >
+                    <Phone className="w-5 h-5" /> Contact Teacher
+                  </button>
+                </div>
+
+                {/* Teacher Contact Info */}
+                {showTeacherContact && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="mt-6 p-6 bg-indigo-50 dark:bg-slate-800 rounded-2xl text-left shadow-inner max-w-md mx-auto border border-indigo-100 dark:border-slate-700 space-y-4"
+                    id="teacher-contact-info"
+                  >
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-black border-b pb-1.5 border-indigo-100 dark:border-slate-700">
+                      Kênh liên hệ hỗ trợ trực tiếp từ Giáo viên
+                    </div>
+                    
+                    <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Giáo viên phụ trách: <span className="text-indigo-950 dark:text-white font-black text-sm">{settings.teacherName || 'Teacher Anna'}</span>
+                    </div>
+
+                    {settings.teacherAddress && (
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                        📍 <strong>Địa chỉ:</strong> {settings.teacherAddress}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                      <div className="relative col-span-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowPhoneOptions(!showPhoneOptions)}
+                          className="w-full flex items-center justify-center gap-1.5 p-3 bg-white dark:bg-slate-700 border border-indigo-250 dark:border-slate-600 hover:bg-indigo-100/55 dark:hover:bg-slate-650 rounded-xl text-indigo-950 dark:text-slate-200 shadow-xs font-bold cursor-pointer"
+                        >
+                          <Phone className="w-4 h-4 text-indigo-900 dark:text-indigo-400" /> 
+                          <span>Gọi / Nhắn tin / Zalo</span>
+                        </button>
+                        
+                        {showPhoneOptions && (
+                          <div className="absolute left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700 text-xs text-slate-700 dark:text-slate-200">
+                            <a
+                              href={`tel:${settings.teacherPhone || '0987.654.321'}`}
+                              className="flex items-center gap-2 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer font-semibold"
+                            >
+                              📞 Gọi Hotline trực tiếp
+                            </a>
+                            <a
+                              href={`sms:${settings.teacherPhone || '0987.654.321'}`}
+                              className="flex items-center gap-2 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer font-semibold"
+                            >
+                              💬 Gửi tin nhắn SMS
+                            </a>
+                            <a
+                              href={`https://zalo.me/${(settings.teacherZalo || settings.teacherPhone || '0987.654.321').replace(/[^0-9]/g, '')}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer font-bold text-indigo-600 dark:text-indigo-400"
+                            >
+                              💬 Mở Zalo trò chuyện
+                            </a>
+                          </div>
+                        )}
+                      </div>
+
+                      <a
+                        href={`mailto:${settings.teacherEmail || 'teacher@english.edu.vn'}`}
+                        className="flex items-center justify-center gap-1.5 p-3 bg-white dark:bg-slate-700 border border-indigo-200 dark:border-slate-600 hover:bg-indigo-100/55 dark:hover:bg-slate-650 rounded-xl text-indigo-950 dark:text-slate-200 shadow-xs cursor-pointer font-bold"
+                      >
+                        ✉️ Gửi Email
+                      </a>
+
+                      {settings.teacherFacebook && (
+                        <a
+                          href={settings.teacherFacebook}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-1.5 p-3 bg-white dark:bg-slate-700 border border-indigo-200 dark:border-slate-600 hover:bg-indigo-100/55 dark:hover:bg-slate-650 rounded-xl text-indigo-950 dark:text-slate-200 shadow-xs cursor-pointer font-bold"
+                        >
+                          🔵 Facebook
+                        </a>
+                      )}
+
+                      {settings.teacherWebsite && (
+                        <a
+                          href={settings.teacherWebsite}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-1.5 p-3 bg-white dark:bg-slate-700 border border-indigo-200 dark:border-slate-600 hover:bg-indigo-100/55 dark:hover:bg-slate-650 rounded-xl text-indigo-950 dark:text-slate-200 shadow-xs cursor-pointer font-bold"
+                        >
+                          🌐 Website
+                        </a>
+                      )}
+                    </div>
+                    
+                    <p className="text-[10px] font-normal text-slate-400 dark:text-slate-500 mt-2 text-center leading-normal">
+                      (Click chọn kênh liên hệ nếu bạn gặp sự cố kỹ thuật hoặc lỗi đường truyền audio)
+                    </p>
+                  </motion.div>
+                )}
+              </>
             )}
 
             <div className="mt-12 text-slate-400 text-xs font-mono">
@@ -272,7 +370,7 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="w-full max-w-md bg-white border border-slate-200 shadow-xl rounded-2xl overflow-hidden"
+            className="w-full max-w-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xl rounded-2xl overflow-hidden"
             id="register-card"
           >
             {/* Form Header */}
@@ -291,15 +389,15 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
             {/* Form Body */}
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
               {error && (
-                <div id="register-error" className="bg-red-50 text-red-700 p-3 rounded-lg text-sm font-medium border border-red-100 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                <div id="register-error" className="bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 p-3 rounded-lg text-sm font-medium border border-red-100 dark:border-red-900/40 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
                   <span>{error}</span>
                 </div>
               )}
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1">
-                  <User className="w-3.5 h-3.5 text-indigo-900" /> Họ và tên thí sinh
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1">
+                  <User className="w-3.5 h-3.5 text-indigo-900 dark:text-indigo-400" /> Họ và tên thí sinh
                 </label>
                 <input
                   id="reg-fullname"
@@ -308,13 +406,13 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
                   placeholder="Ví dụ: Nguyễn Văn A"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-indigo-900 focus:outline-none transition-colors"
+                  className="w-full px-4 py-3 border-2 border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:border-indigo-900 dark:focus:border-indigo-400 focus:outline-none transition-colors"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1">
-                  <Smartphone className="w-3.5 h-3.5 text-indigo-900" /> Số điện thoại
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1">
+                  <Smartphone className="w-3.5 h-3.5 text-indigo-900 dark:text-indigo-400" /> Số điện thoại
                 </label>
                 <input
                   id="reg-phone"
@@ -323,20 +421,20 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
                   placeholder="Ví dụ: 0912345678"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-indigo-900 focus:outline-none transition-colors"
+                  className="w-full px-4 py-3 border-2 border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:border-indigo-900 dark:focus:border-indigo-400 focus:outline-none transition-colors"
                 />
-                <p className="text-slate-400 text-xs">
+                <p className="text-slate-400 dark:text-slate-500 text-xs">
                   * Mỗi SĐT chỉ được làm bài 1 lần duy nhất. Nếu bạn đang làm dở, nhập đúng SĐT để tiếp tục làm tiếp.
                 </p>
               </div>
 
               {exams.length > 0 && (
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1">
-                    <FileText className="w-3.5 h-3.5 text-indigo-900" /> Chọn đề thi / Kỳ thi
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1">
+                    <FileText className="w-3.5 h-3.5 text-indigo-900 dark:text-indigo-400" /> Chọn đề thi / Kỳ thi
                   </label>
                   {isExamLocked ? (
-                    <div className="w-full px-4 py-3 bg-indigo-50 border-2 border-indigo-200 text-indigo-950 font-bold rounded-xl flex items-center gap-2 text-xs">
+                    <div className="w-full px-4 py-3 bg-indigo-50 dark:bg-slate-900 border-2 border-indigo-200 dark:border-slate-700 text-indigo-950 dark:text-slate-200 font-bold rounded-xl flex items-center gap-2 text-xs">
                       <span className="bg-indigo-900 text-white text-[10px] uppercase font-black px-1.5 py-0.5 rounded shrink-0">LINK KHÓA</span>
                       <span className="truncate">
                         {exams.find((e) => e.id === selectedExamId)?.title || selectedExamId} ({exams.find((e) => e.id === selectedExamId)?.durationMinutes || 45} phút)
@@ -347,7 +445,7 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
                       id="reg-exam"
                       value={selectedExamId}
                       onChange={(e) => setSelectedExamId(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl bg-white focus:border-indigo-900 focus:outline-none transition-colors"
+                      className="w-full px-4 py-3 border-2 border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:border-indigo-900 dark:focus:border-indigo-400 focus:outline-none transition-colors"
                     >
                       {exams.map((ex) => (
                         <option key={ex.id} value={ex.id}>
@@ -357,7 +455,7 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
                     </select>
                   )}
                   {isExamLocked && (
-                    <p className="text-[11px] text-indigo-800 italic leading-snug">
+                    <p className="text-[11px] text-indigo-800 dark:text-indigo-400 italic leading-snug">
                       * Thí sinh đang truy cập thông qua liên kết trực tiếp. Bạn chỉ được phép thực hiện duy nhất bài thi này.
                     </p>
                   )}
@@ -365,7 +463,7 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
               )}
 
               {/* Warnings check boxes/notice */}
-              <div className="bg-slate-50 p-4 rounded-xl text-xs text-slate-600 space-y-2 border border-slate-100">
+              <div className="bg-slate-50 dark:bg-slate-900 p-4 rounded-xl text-xs text-slate-600 dark:text-slate-400 space-y-2 border border-slate-100 dark:border-slate-800">
                 <div className="flex items-start gap-2">
                   <input type="checkbox" required id="agree-check" className="mt-0.5 accent-indigo-900" />
                   <label htmlFor="agree-check" className="cursor-pointer">

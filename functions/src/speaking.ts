@@ -1,13 +1,13 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import fs from 'fs';
-import path from 'path';
-import { SPEAKING_READ_ALOUD } from '../src/questions';
+import { SPEAKING_READ_ALOUD } from './questions';
+import { db } from './db';
 
 let aiClient: GoogleGenAI | null = null;
 
-function getAiClient(): GoogleGenAI {
+async function getAiClient(): Promise<GoogleGenAI> {
   if (!aiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const settings = await db.getSettings();
+    const apiKey = settings.geminiApiKey || process.env.GEMINI_API_KEY;
     if (!apiKey) {
       throw new Error('Chưa cấu hình GEMINI_API_KEY trong hệ thống. Giáo viên vui lòng vào Settings > Secrets để cấu hình.');
     }
@@ -44,7 +44,6 @@ export async function evaluateSpeakingAudio(
   let base64Audio = '';
 
   if (audioPath.startsWith('http://') || audioPath.startsWith('https://')) {
-    // Fetch from URL
     try {
       const response = await fetch(audioPath);
       if (!response.ok) {
@@ -57,12 +56,7 @@ export async function evaluateSpeakingAudio(
       throw new Error(`Could not fetch audio URL: ${err.message}`);
     }
   } else {
-    const fullPath = path.join(process.cwd(), audioPath);
-    if (!fs.existsSync(fullPath)) {
-      throw new Error(`Không tìm thấy file ghi âm tại đường dẫn: ${audioPath}`);
-    }
-    const audioBytes = fs.readFileSync(fullPath);
-    base64Audio = audioBytes.toString('base64');
+    throw new Error('Đường dẫn file ghi âm không hợp lệ hoặc không bắt đầu bằng http/https.');
   }
 
   // Determine mime type from extension/URL
@@ -96,7 +90,7 @@ export async function evaluateSpeakingAudio(
   `;
 
   try {
-    const ai = getAiClient();
+    const ai = await getAiClient();
     const audioPart = {
       inlineData: {
         mimeType,

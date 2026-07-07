@@ -11,7 +11,11 @@ import {
   CheckCircle2,
   Phone,
   Sun,
-  Moon
+  Moon,
+  BookOpen,
+  FileText,
+  Video,
+  ExternalLink
 } from 'lucide-react';
 
 // Components
@@ -25,6 +29,12 @@ import VocabularySection from './components/VocabularySection';
 import ReadingSection from './components/ReadingSection';
 import WritingSection from './components/WritingSection';
 import AdminPanel from './components/AdminPanel';
+
+// Firebase Services
+import { candidateService } from './services/candidateService';
+import { settingsService } from './services/settingsService';
+import { examService } from './services/examService';
+import { materialService } from './services/materialService';
 
 // Data questions
 import {
@@ -161,6 +171,8 @@ export default function App() {
   const [timeLeftSeconds, setTimeLeftSeconds] = useState(2700); // Dynamic timer, starts at default
   const [tabSwitches, setTabSwitches] = useState(0);
   const [testCompleted, setTestCompleted] = useState(false);
+  const [materials, setMaterials] = useState<any[]>([]);
+  const [showPhoneOptions, setShowPhoneOptions] = useState(false);
 
   // Skipping question states
   const [skippingQuestionId, setSkippingQuestionId] = useState<string | null>(null);
@@ -181,15 +193,20 @@ export default function App() {
 
   // Fetch Public settings on mount
   useEffect(() => {
-    fetch('/api/settings')
-      .then((res) => res.json())
+    settingsService.getSettings()
       .then((data) => {
-        if (data && data.settings) {
-          setSettings(data.settings);
-          applyTheme(data.settings.themeColor || 'indigo');
+        if (data) {
+          setSettings(data);
+          applyTheme(data.themeColor || 'indigo');
         }
       })
       .catch((err) => console.error('Error loading settings:', err));
+
+    materialService.getMaterials()
+      .then((mList) => {
+        setMaterials(mList || []);
+      })
+      .catch((err) => console.error('Error loading materials:', err));
   }, []);
 
   // Restore session from localStorage if candidate info is already present
@@ -256,14 +273,7 @@ export default function App() {
 
     try {
       // Log cheating event to backend database
-      await fetch('/api/candidates/log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: candidate.id,
-          action: `Tab Switched (Lần ${newCount})`
-        })
-      });
+      await candidateService.addLog(candidate.id, `Tab Switched (Lần ${newCount})`);
     } catch (e) {
       console.error('Error logging tab switch:', e);
     }
@@ -273,17 +283,7 @@ export default function App() {
   const handleRegister = async (fullName: string, phone: string, examId: string) => {
     setLoading(true);
     try {
-      const res = await fetch('/api/candidates/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fullName, phone, examId })
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        setLoading(false);
-        return { success: false, error: data.error };
-      }
+      const data = await candidateService.registerCandidate(fullName, phone, examId);
 
       setCandidate(data.candidate);
       setActiveExam(data.exam);
@@ -328,9 +328,8 @@ export default function App() {
   // Resume Session helper
   const resumeSession = async (id: string) => {
     try {
-      const res = await fetch(`/api/candidates/session/${id}`);
-      if (res.ok) {
-        const data = await res.json();
+      const data = await candidateService.startSession(id);
+      if (data) {
         setCandidate(data.candidate);
         setActiveExam(data.exam);
         const restoredAnswers = data.answers || {};
@@ -394,15 +393,7 @@ export default function App() {
     try {
       const totalSecs = (activeExam.durationMinutes || 45) * 60;
       const elapsed = totalSecs - timeLeftSeconds;
-      await fetch('/api/candidates/save-answers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: candidate.id,
-          answers: answersObj,
-          durationSeconds: elapsed
-        })
-      });
+      await candidateService.updateAnswers(candidate.id, answersObj, elapsed);
     } catch (e) {
       console.error('Error saving answers in background:', e);
     }
@@ -411,15 +402,7 @@ export default function App() {
   const saveProgressToServer = async (elapsedSeconds: number) => {
     if (!candidate) return;
     try {
-      await fetch('/api/candidates/save-answers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: candidate.id,
-          answers,
-          durationSeconds: elapsedSeconds
-        })
-      });
+      await candidateService.updateAnswers(candidate.id, answers, elapsedSeconds);
     } catch (e) {
       console.error('Error saving duration in background:', e);
     }
@@ -432,20 +415,11 @@ export default function App() {
     setShowConfirmSubmit(false);
 
     try {
-      const res = await fetch('/api/candidates/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: candidate.id })
-      });
-
-      if (res.ok) {
-        setTestCompleted(true);
-        localStorage.removeItem('candidate_session');
-        localStorage.removeItem('audio_l1_state');
-        localStorage.removeItem('audio_l2_state');
-      } else {
-        alert('Có lỗi xảy ra khi nộp bài. Vui lòng nhấn nộp lại hoặc liên hệ Giáo viên.');
-      }
+      await candidateService.submitTest(candidate.id);
+      setTestCompleted(true);
+      localStorage.removeItem('candidate_session');
+      localStorage.removeItem('audio_l1_state');
+      localStorage.removeItem('audio_l2_state');
     } catch (err) {
       alert('Không thể kết nối đến máy chủ để nộp bài. Vui lòng kiểm tra mạng.');
     } finally {
@@ -456,11 +430,7 @@ export default function App() {
   const handleAutoSubmit = async () => {
     if (!candidate) return;
     try {
-      await fetch('/api/candidates/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: candidate.id })
-      });
+      await candidateService.submitTest(candidate.id);
       setTestCompleted(true);
       localStorage.removeItem('candidate_session');
     } catch (e) {
@@ -469,16 +439,26 @@ export default function App() {
     }
   };
 
-  const handleManualExit = () => {
-    if (confirm('Bạn có chắc chắn muốn rời bài thi và xóa thông tin phiên làm việc hiện tại không?')) {
-      localStorage.removeItem('candidate_session');
-      localStorage.removeItem('audio_l1_state');
-      localStorage.removeItem('audio_l2_state');
-      setCandidate(null);
-      setAnswers({});
-      setSkippedQuestions({});
-      setTestCompleted(false);
-      setCurrentSection('listening');
+  const handleManualExit = async () => {
+    if (!candidate) return;
+    if (confirm('BẠN CÓ CHẮC CHẮN MUỐN RỜI PHÒNG THI? Toàn bộ kết quả bài làm của bạn sẽ BỊ XOÁ SẠCH và bạn sẽ KHÔNG THỂ thi lại nếu không được giáo viên reset.')) {
+      setLoading(true);
+      try {
+        await candidateService.leaveRoom(candidate.id);
+        localStorage.removeItem('candidate_session');
+        localStorage.removeItem('audio_l1_state');
+        localStorage.removeItem('audio_l2_state');
+        setCandidate(null);
+        setAnswers({});
+        setSkippedQuestions({});
+        setTestCompleted(false);
+        setCurrentSection('listening');
+      } catch (err) {
+        console.error('Error leaving room:', err);
+        alert('Lỗi khi rời phòng thi. Vui lòng thử lại.');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -622,41 +602,190 @@ export default function App() {
   // 3. RENDER THANK YOU PAGE (TEST COMPLETED)
   if (testCompleted) {
     return (
-      <div id="thank-you-screen" className="min-h-screen bg-slate-50 flex flex-col justify-between">
+      <div id="thank-you-screen" className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-between transition-colors duration-200">
         <div className="h-2 bg-indigo-900 w-full" />
         
-        <main className="max-w-xl mx-auto px-4 py-16 flex-grow flex flex-col justify-center items-center text-center">
+        <main className="max-w-5xl w-full mx-auto px-4 py-12 flex-grow flex flex-col justify-center gap-8">
+          {/* Header Card */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5 }}
-            className="bg-white border border-slate-200 shadow-xl rounded-2xl p-8 space-y-6"
-            id="thank-you-card"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-3xl p-6 text-center max-w-2xl mx-auto w-full space-y-4"
           >
             <div className="flex justify-center">
-              <div className="bg-green-100 text-green-700 p-4 rounded-full shadow-inner flex items-center justify-center">
-                <CheckCircle2 className="w-16 h-16" />
+              <div className="bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400 p-3.5 rounded-full shadow-inner flex items-center justify-center">
+                <CheckCircle2 className="w-12 h-12" />
               </div>
             </div>
 
-            <h1 className="text-3xl font-extrabold text-indigo-950 uppercase tracking-tight">
-              Thank you for completing the test.
-            </h1>
+            <div className="space-y-2">
+              <h1 className="text-2xl md:text-3xl font-black text-indigo-950 dark:text-slate-100 uppercase tracking-tight">
+                You have already completed this exam.
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                Hệ thống ghi nhận bạn đã hoàn thành bài thi này. Kết quả chi tiết đang được cập nhật.
+              </p>
+            </div>
             
-            <p className="text-slate-600 font-medium leading-relaxed">
-              Bài làm của bạn đã được ghi nhận thành công trên hệ thống. Giáo viên sẽ chấm điểm phần thi viết (Writing) và trả kết quả đánh giá năng lực toàn diện trong thời gian sớm nhất.
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed max-w-md mx-auto">
+              Bài làm của bạn đã được lưu trữ an toàn trên máy chủ đám mây. Giáo viên sẽ tiến hành đánh giá chi tiết phần thi viết (Writing) và trả kết quả toàn diện trong thời gian sớm nhất.
             </p>
+          </motion.div>
 
-            <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl text-xs text-indigo-900/90 leading-relaxed font-sans max-w-sm mx-auto text-left space-y-2">
-              <div className="flex items-center gap-2 border-b border-indigo-150 pb-1.5 mb-1.5 font-bold">
-                <Phone className="w-4 h-4 text-indigo-900" /> Liên hệ giáo viên hỗ trợ:
+          {/* Grid Area: Contact + Materials */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+            {/* Column 1: Interactive Contact Options */}
+            <motion.div
+              initial={{ opacity: 0, x: -15 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.1 }}
+              className="md:col-span-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-3xl p-6 space-y-4"
+            >
+              <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 font-black text-indigo-950 dark:text-slate-100 uppercase text-xs tracking-wide">
+                <Phone className="w-4 h-4 text-indigo-900 dark:text-indigo-400" />
+                <span>Liên hệ giáo viên phụ trách</span>
               </div>
-              <div>Hotline tư vấn tuyển sinh & đào tạo: <strong className="text-indigo-950 block text-sm">{settings.teacherPhone || '0987.654.321'}</strong></div>
-              {settings.teacherEmail && (
-                <div>Địa chỉ Email liên hệ: <strong className="text-indigo-950 block text-sm">{settings.teacherEmail}</strong></div>
-              )}
-            </div>
 
+              <div className="text-xs text-slate-600 dark:text-slate-300 font-semibold space-y-1">
+                <div>Giáo viên phụ trách:</div>
+                <div className="text-indigo-950 dark:text-slate-100 font-black text-sm">{settings.teacherName || 'Teacher Anna'}</div>
+              </div>
+
+              {settings.teacherAddress && (
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-900">
+                  📍 <strong>Địa chỉ trung tâm/văn phòng:</strong>
+                  <div className="mt-1 font-medium">{settings.teacherAddress}</div>
+                </div>
+              )}
+
+              <div className="space-y-2 pt-2">
+                {/* Phone Selector */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowPhoneOptions(!showPhoneOptions)}
+                    className="w-full flex items-center justify-center gap-1.5 p-3 bg-indigo-50/50 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-750 border border-indigo-100 dark:border-slate-700 rounded-xl text-indigo-950 dark:text-slate-200 font-bold text-xs transition-all cursor-pointer"
+                  >
+                    <Phone className="w-3.5 h-3.5 text-indigo-900 dark:text-indigo-400" />
+                    <span>Gọi điện / SMS / Zalo</span>
+                  </button>
+
+                  {showPhoneOptions && (
+                    <div className="absolute left-0 right-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700 text-xs text-slate-700 dark:text-slate-200">
+                      <a
+                        href={`tel:${settings.teacherPhone || '0987.654.321'}`}
+                        className="flex items-center gap-2 p-3 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer font-semibold"
+                      >
+                        📞 Gọi Hotline trực tiếp
+                      </a>
+                      <a
+                        href={`sms:${settings.teacherPhone || '0987.654.321'}`}
+                        className="flex items-center gap-2 p-3 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer font-semibold"
+                      >
+                        💬 Gửi tin nhắn SMS
+                      </a>
+                      <a
+                        href={`https://zalo.me/${(settings.teacherZalo || settings.teacherPhone || '0987.654.321').replace(/[^0-9]/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 p-3 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer font-bold text-indigo-600 dark:text-indigo-400"
+                      >
+                        💬 Mở ứng dụng Zalo Chat
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                <a
+                  href={`mailto:${settings.teacherEmail || 'teacher@english.edu.vn'}`}
+                  className="w-full flex items-center justify-center gap-1.5 p-3 bg-white dark:bg-slate-800 hover:bg-slate-50 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-750 dark:text-slate-300 font-bold text-xs transition-all cursor-pointer"
+                >
+                  ✉️ Gửi thư điện tử (Email)
+                </a>
+
+                {settings.teacherFacebook && (
+                  <a
+                    href={settings.teacherFacebook}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-1.5 p-3 bg-white dark:bg-slate-800 hover:bg-slate-50 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-750 dark:text-slate-300 font-bold text-xs transition-all cursor-pointer"
+                  >
+                    🔵 Theo dõi qua Facebook
+                  </a>
+                )}
+
+                {settings.teacherWebsite && (
+                  <a
+                    href={settings.teacherWebsite}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-1.5 p-3 bg-white dark:bg-slate-800 hover:bg-slate-50 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-750 dark:text-slate-300 font-bold text-xs transition-all cursor-pointer"
+                  >
+                    🌐 Truy cập Website
+                  </a>
+                )}
+              </div>
+            </motion.div>
+
+            {/* Column 2: Exclusive Study Materials */}
+            <motion.div
+              initial={{ opacity: 0, x: 15 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2 }}
+              className="md:col-span-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-3xl p-6 space-y-4"
+            >
+              <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 font-black text-indigo-950 dark:text-slate-100 uppercase text-xs tracking-wide">
+                <BookOpen className="w-4 h-4 text-indigo-900 dark:text-indigo-400" />
+                <span>Tài liệu học tập bổ trợ cho bạn</span>
+              </div>
+
+              {materials.length > 0 ? (
+                <>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
+                    Giáo viên đã chia sẻ các tài liệu ôn luyện độc quyền dưới đây dành riêng cho học sinh đã tham gia thi thử thành công. Hãy click để xem và tải về.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+                    {materials.map((m) => {
+                      let IconComponent = BookOpen;
+                      if (m.type === 'document') IconComponent = FileText;
+                      else if (m.type === 'video') IconComponent = Video;
+                      else if (m.type === 'link') IconComponent = ExternalLink;
+
+                      return (
+                        <a
+                          key={m.id}
+                          href={m.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="group flex gap-3 p-3.5 bg-slate-50 dark:bg-slate-800/50 hover:bg-indigo-50/40 dark:hover:bg-slate-800 border border-slate-150 dark:border-slate-800 hover:border-indigo-200 dark:hover:border-indigo-500 rounded-2xl transition-all duration-150 cursor-pointer"
+                        >
+                          <div className="flex-none p-2 bg-indigo-50 dark:bg-slate-700 rounded-xl text-indigo-900 dark:text-indigo-300 group-hover:bg-indigo-100/70 transition-colors h-10 w-10 flex items-center justify-center">
+                            <IconComponent className="w-4 h-4" />
+                          </div>
+                          <div className="space-y-0.5 overflow-hidden text-left">
+                            <h4 className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-wide line-clamp-1 group-hover:text-indigo-900 dark:group-hover:text-indigo-300 transition-colors">
+                              {m.title}
+                            </h4>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                              {m.description || 'Tài liệu hướng dẫn bổ trợ.'}
+                            </p>
+                          </div>
+                        </a>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-10 space-y-2 border-2 border-dashed border-slate-150 dark:border-slate-800 rounded-2xl">
+                  <div className="text-slate-400 text-3xl">📚</div>
+                  <div className="text-xs text-slate-400 dark:text-slate-500 font-bold">Chưa có tài liệu bổ trợ nào được đăng tải.</div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+
+          {/* Logout Action Area */}
+          <div className="text-center pt-4">
             <button
               onClick={() => {
                 localStorage.removeItem('candidate_session');
@@ -666,11 +795,11 @@ export default function App() {
                 setTestCompleted(false);
                 setCurrentSection('listening');
               }}
-              className="bg-indigo-900 hover:bg-indigo-850 text-white font-semibold py-3 px-6 rounded-xl shadow transition-colors cursor-pointer w-full text-xs"
+              className="bg-indigo-900 hover:bg-indigo-850 dark:bg-slate-800 dark:hover:bg-slate-700 text-white dark:text-slate-100 font-extrabold py-3 px-8 rounded-2xl shadow hover:shadow-md transition-all cursor-pointer text-xs uppercase tracking-wider"
             >
-              Quay lại Trang chủ
+              Đăng xuất & Quay về Trang chủ
             </button>
-          </motion.div>
+          </div>
         </main>
 
         <footer className="bg-indigo-950 text-slate-400 text-center py-4 text-xs border-t border-indigo-900">
@@ -821,14 +950,7 @@ export default function App() {
               <button
                 onClick={() => {
                   setShowCheatWarning(false);
-                  fetch('/api/candidates/log', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      id: candidate.id,
-                      action: `Thí sinh đã xác nhận cảnh báo vi phạm chuyển tab để mở khóa làm bài tiếp.`
-                    })
-                  }).catch(() => {});
+                  candidateService.addLog(candidate.id, `Thí sinh đã xác nhận cảnh báo vi phạm chuyển tab để mở khóa làm bài tiếp.`).catch(() => {});
                 }}
                 className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold py-4 px-6 rounded-2xl text-xs tracking-wider uppercase shadow-lg shadow-red-600/20 active:scale-95 transition-all cursor-pointer"
               >

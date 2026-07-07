@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Check, RefreshCw, AlertCircle, Play, Sparkles, Volume2 } from 'lucide-react';
 import { SPEAKING_READ_ALOUD, SPEAKING_QUESTIONS } from '../questions';
+import { candidateService } from '../services/candidateService';
+import { storageService } from '../services/storageService';
 
 interface SpeakingSectionProps {
   candidateId: string;
@@ -87,32 +89,33 @@ export default function SpeakingSection({
         reader.onloadend = async () => {
           const base64Audio = reader.result as string;
           try {
-            // Upload audio to server
-            const res = await fetch('/api/candidates/upload-audio', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                id: candidateId,
-                part: id, // e.g. 'speaking_p1' or 'speaking_p2_q1' etc
-                audioData: base64Audio
-              })
-            });
-
-            if (!res.ok) {
-              throw new Error('Failed to upload audio to the server.');
+            // Upload audio directly to Firebase Storage
+            const downloadUrl = await storageService.uploadBase64Audio(base64Audio, candidateId, id);
+            
+            // Map the audio path to the proper sub-field of answers
+            let answersUpdate: any = {};
+            if (id === 'speaking_p1') {
+              answersUpdate.speakingPart1 = { audioPath: downloadUrl };
+            } else if (id === 'speaking_p2_q1') {
+              answersUpdate.speakingPart2 = { sp_1_audioPath: downloadUrl };
+            } else if (id === 'speaking_p2_q2') {
+              answersUpdate.speakingPart2 = { sp_2_audioPath: downloadUrl };
+            } else if (id === 'speaking_p2_q3') {
+              answersUpdate.speakingPart2 = { sp_3_audioPath: downloadUrl };
             }
 
-            const data = await res.json();
+            // Update candidate document in Firestore
+            await candidateService.updateAnswers(candidateId, answersUpdate);
             
             // Mark answer as registered (save path as answer value in UI for tracking)
-            onAnswerChange(id, data.audioPath);
+            onAnswerChange(id, downloadUrl);
 
             // If speaking_p1 (Read Aloud), trigger Gemini AI Pronunciation scoring automatically!
             if (id === 'speaking_p1') {
               fetch('/api/speaking/evaluate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: candidateId, audioPath: data.audioPath })
+                body: JSON.stringify({ id: candidateId, audioPath: downloadUrl })
               }).then(() => {
                 onRefreshSession(); // update state in parent
               }).catch(err => console.error('Gemini background evaluate failed:', err));
@@ -122,7 +125,7 @@ export default function SpeakingSection({
           } catch (err) {
             console.error('Audio upload failure:', err);
             setRecordingState(prev => ({ ...prev, [id]: 'idle' }));
-            alert('Lỗi tải file ghi âm lên server. Vui lòng thử lại hoặc nhờ giáo viên hỗ trợ.');
+            alert('Lỗi tải file ghi âm lên Firebase Storage. Vui lòng thử lại hoặc nhờ giáo viên hỗ trợ.');
           }
         };
 

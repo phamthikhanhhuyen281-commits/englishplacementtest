@@ -7,6 +7,8 @@ import {
   Clock,
   Award,
   ChevronLeft,
+  ChevronDown,
+  ChevronRight,
   Download,
   Play,
   Volume2,
@@ -24,9 +26,19 @@ import {
   BookOpen,
   Plus,
   ExternalLink,
-  Video
+  Video,
+  Settings
 } from 'lucide-react';
 import { WRITING_QUESTIONS, LISTENING_PART_1, LISTENING_PART_2, GRAMMAR_QUESTIONS, VOCABULARY_QUESTIONS, READING_PASSAGE } from '../questions';
+
+// Firebase Services
+import { authService } from '../services/auth';
+import { candidateService } from '../services/candidateService';
+import { examService } from '../services/examService';
+import { materialService } from '../services/materialService';
+import { settingsService } from '../services/settingsService';
+import { storageService } from '../services/storageService';
+import { aiScanService } from '../services/aiScanService';
 
 interface CandidateSummary {
   id: string;
@@ -146,6 +158,8 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
   const [filteredCandidates, setFilteredCandidates] = useState<CandidateSummary[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'completed' | 'active'>('all');
+  const [expandedPhones, setExpandedPhones] = useState<string[]>([]);
+  const [lockLoadingPhone, setLockLoadingPhone] = useState<string | null>(null);
 
   // Candidate Details state
   const [selectedCandidate, setSelectedCandidate] = useState<any | null>(null);
@@ -153,11 +167,28 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
   const [activeAuditTab, setActiveAuditTab] = useState<'listening' | 'grammar' | 'vocabulary' | 'reading'>('listening');
 
   // Materials state
-  const [adminTab, setAdminTab] = useState<'candidates' | 'materials' | 'exams'>('candidates');
+  const [adminTab, setAdminTab] = useState<'candidates' | 'materials' | 'exams' | 'settings'>('candidates');
   const [materials, setMaterials] = useState<any[]>([]);
   const [newMaterialTitle, setNewMaterialTitle] = useState('');
   const [newMaterialDesc, setNewMaterialDesc] = useState('');
   const [newMaterialUrl, setNewMaterialUrl] = useState('');
+
+  // Settings State
+  const [logoUrl, setLogoUrl] = useState('');
+  const [themeColor, setThemeColor] = useState('indigo');
+  const [slogan, setSlogan] = useState('');
+  const [teacherPhone, setTeacherPhone] = useState('');
+  const [teacherEmail, setTeacherEmail] = useState('');
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [teacherName, setTeacherName] = useState('');
+  const [teacherZalo, setTeacherZalo] = useState('');
+  const [teacherFacebook, setTeacherFacebook] = useState('');
+  const [teacherWebsite, setTeacherWebsite] = useState('');
+  const [teacherAddress, setTeacherAddress] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordChangeLoading, setPasswordChangeLoading] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(false);
   const [newMaterialType, setNewMaterialType] = useState('document'); // document | link | video | other
   const [materialSubmitting, setMaterialSubmitting] = useState(false);
 
@@ -185,15 +216,10 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
   };
 
   // Exam CRUD & scanning functions
-  const fetchExams = async (authToken: string = token) => {
+  const fetchExams = async () => {
     try {
-      const res = await fetch('/api/admin/exams', {
-        headers: { 'Authorization': authToken }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setExams(data.exams || []);
-      }
+      const list = await examService.getExams();
+      setExams(list || []);
     } catch (e) {
       console.error('Error fetching exams:', e);
     }
@@ -207,62 +233,37 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     }
     setExamLoading(true);
     try {
-      const res = await fetch('/api/admin/exams', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token
-        },
-        body: JSON.stringify({
-          title: examTitle.trim(),
-          description: examDesc.trim(),
-          durationMinutes: examDuration
-        })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const createdExam = data.exam;
-        
-        let parsedQuestions = {};
-        if (examQuestionsJson.trim()) {
-          try {
-            parsedQuestions = JSON.parse(examQuestionsJson);
-          } catch (err) {
-            showAlert('Cảnh báo', 'Đề thi đã được tạo nhưng JSON câu hỏi không hợp lệ nên chưa thể lưu các câu hỏi.', 'error');
-          }
+      let parsedQuestions = {};
+      if (examQuestionsJson.trim()) {
+        try {
+          parsedQuestions = JSON.parse(examQuestionsJson);
+        } catch (err) {
+          showAlert('Cảnh báo', 'JSON câu hỏi không hợp lệ nên chưa thể lưu các câu hỏi.', 'error');
         }
-
-        const updateRes = await fetch(`/api/admin/exams/${createdExam.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': token
-          },
-          body: JSON.stringify({
-            audio1Url: examAudio1Url,
-            audio2Url: examAudio2Url,
-            questions: parsedQuestions
-          })
-        });
-
-        if (updateRes.ok) {
-          showAlert('Thành công', 'Đã tạo đề thi mới thành công!', 'success');
-        } else {
-          showAlert('Thành công', 'Đã tạo đề thi nhưng không thể cập nhật câu hỏi.', 'success');
-        }
-
-        setExamTitle('');
-        setExamDesc('');
-        setExamDuration(60);
-        setExamAudio1Url('');
-        setExamAudio2Url('');
-        setExamQuestionsJson('');
-        setEditingExamId(null);
-        fetchExams();
-      } else {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Không thể tạo đề thi.');
       }
+
+      const id = Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
+      const newExam = {
+        id,
+        title: examTitle.trim(),
+        description: examDesc.trim(),
+        durationMinutes: examDuration,
+        audio1Url: examAudio1Url,
+        audio2Url: examAudio2Url,
+        questions: parsedQuestions
+      };
+
+      await examService.saveExam(newExam as any);
+      showAlert('Thành công', 'Đã tạo đề thi mới thành công!', 'success');
+
+      setExamTitle('');
+      setExamDesc('');
+      setExamDuration(60);
+      setExamAudio1Url('');
+      setExamAudio2Url('');
+      setExamQuestionsJson('');
+      setEditingExamId(null);
+      fetchExams();
     } catch (err: any) {
       showAlert('Thất bại', err.message || 'Lỗi khi tạo đề thi.', 'error');
     } finally {
@@ -290,36 +291,26 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
 
     setExamLoading(true);
     try {
-      const res = await fetch(`/api/admin/exams/${editingExamId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token
-        },
-        body: JSON.stringify({
-          title: examTitle.trim(),
-          description: examDesc.trim(),
-          durationMinutes: examDuration,
-          audio1Url: examAudio1Url,
-          audio2Url: examAudio2Url,
-          questions: parsedQuestions
-        })
-      });
+      const updatedExam = {
+        id: editingExamId,
+        title: examTitle.trim(),
+        description: examDesc.trim(),
+        durationMinutes: examDuration,
+        audio1Url: examAudio1Url,
+        audio2Url: examAudio2Url,
+        questions: parsedQuestions
+      };
 
-      if (res.ok) {
-        showAlert('Thành công', 'Cập nhật đề thi thành công!', 'success');
-        setEditingExamId(null);
-        setExamTitle('');
-        setExamDesc('');
-        setExamDuration(60);
-        setExamAudio1Url('');
-        setExamAudio2Url('');
-        setExamQuestionsJson('');
-        fetchExams();
-      } else {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Không thể cập nhật đề thi.');
-      }
+      await examService.saveExam(updatedExam as any);
+      showAlert('Thành công', 'Cập nhật đề thi thành công!', 'success');
+      setEditingExamId(null);
+      setExamTitle('');
+      setExamDesc('');
+      setExamDuration(60);
+      setExamAudio1Url('');
+      setExamAudio2Url('');
+      setExamQuestionsJson('');
+      fetchExams();
     } catch (err: any) {
       showAlert('Thất bại', err.message || 'Lỗi khi cập nhật đề thi.', 'error');
     } finally {
@@ -332,16 +323,9 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
       return;
     }
     try {
-      const res = await fetch(`/api/admin/exams/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': token }
-      });
-      if (res.ok) {
-        showAlert('Đã xóa', 'Xóa đề thi thành công!', 'success');
-        fetchExams();
-      } else {
-        throw new Error('Lỗi khi xóa đề thi.');
-      }
+      await examService.deleteExam(id);
+      showAlert('Đã xóa', 'Xóa đề thi thành công!', 'success');
+      fetchExams();
     } catch (err: any) {
       showAlert('Thất bại', err.message, 'error');
     }
@@ -361,40 +345,21 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const base64Data = reader.result as string;
-      try {
-        const res = await fetch('/api/admin/upload-file', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': token
-          },
-          body: JSON.stringify({
-            fileName: file.name,
-            fileData: base64Data
-          })
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          if (audioSlot === 1) {
-            setExamAudio1Url(data.filePath);
-            showAlert('Thành công', 'Đã tải lên Audio 1 thành công!', 'success');
-          } else {
-            setExamAudio2Url(data.filePath);
-            showAlert('Thành công', 'Đã tải lên Audio 2 thành công!', 'success');
-          }
-        } else {
-          const errData = await res.json();
-          throw new Error(errData.error || 'Lỗi tải audio.');
-        }
-      } catch (err: any) {
-        showAlert('Thất bại', err.message, 'error');
+    setExamLoading(true);
+    try {
+      const downloadUrl = await storageService.uploadFile(file, 'exams/audio');
+      if (audioSlot === 1) {
+        setExamAudio1Url(downloadUrl);
+        showAlert('Thành công', 'Đã tải lên Audio 1 thành công!', 'success');
+      } else {
+        setExamAudio2Url(downloadUrl);
+        showAlert('Thành công', 'Đã tải lên Audio 2 thành công!', 'success');
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err: any) {
+      showAlert('Thất bại', err.message || 'Lỗi tải audio.', 'error');
+    } finally {
+      setExamLoading(false);
+    }
   };
 
   const handleAIScanExam = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -409,46 +374,28 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     reader.onloadend = async () => {
       const base64Data = reader.result as string;
       try {
-        const res = await fetch('/api/admin/exams/scan-ai', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': token
-          },
-          body: JSON.stringify({
-            fileData: base64Data,
-            mimeType: file.type || 'image/jpeg'
-          })
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          const result = data.examData;
+        const result = await aiScanService.scanExamWithAI(base64Data, file.type || 'image/jpeg');
+        
+        if (result) {
+          setExamTitle(result.title || examTitle || 'Đề thi Quét bởi AI');
+          setExamDesc(result.description || examDesc || 'Đề thi tự động quét và tạo lập bởi AI');
+          setExamDuration(result.durationMinutes || examDuration || 60);
           
-          if (result) {
-            setExamTitle(result.title || examTitle || 'Đề thi Quét bởi AI');
-            setExamDesc(result.description || examDesc || 'Đề thi tự động quét và tạo lập bởi AI');
-            setExamDuration(result.durationMinutes || examDuration || 60);
-            
-            const questionsObj = {
-              listeningPart1: result.listeningPart1 || [],
-              listeningPart2: result.listeningPart2 || [],
-              speakingReadAloud: result.speakingReadAloud || { text: "", wordCount: 0 },
-              speakingQuestions: result.speakingQuestions || [],
-              grammar: result.grammar || [],
-              vocabulary: result.vocabulary || [],
-              readingPassage: result.readingPassage || { title: "", text: "", questionsPartA: [], questionsPartB: [] },
-              writingQuestions: result.writingQuestions || []
-            };
+          const questionsObj = {
+            listeningPart1: result.listeningPart1 || [],
+            listeningPart2: result.listeningPart2 || [],
+            speakingReadAloud: result.speakingReadAloud || { text: "", wordCount: 0 },
+            speakingQuestions: result.speakingQuestions || [],
+            grammar: result.grammar || [],
+            vocabulary: result.vocabulary || [],
+            readingPassage: result.readingPassage || { title: "", text: "", questionsPartA: [], questionsPartB: [] },
+            writingQuestions: result.writingQuestions || []
+          };
 
-            setExamQuestionsJson(JSON.stringify(questionsObj, null, 2));
-            showAlert('Quét đề hoàn tất', 'AI đã phân tích đề thi thành công! Vui lòng kiểm tra và chỉnh sửa chi tiết ở biểu mẫu phía dưới trước khi bấm Lưu.', 'success');
-          } else {
-            throw new Error('Dữ liệu quét không hợp lệ.');
-          }
+          setExamQuestionsJson(JSON.stringify(questionsObj, null, 2));
+          showAlert('Quét đề hoàn tất', 'AI đã phân tích đề thi thành công! Vui lòng kiểm tra và chỉnh sửa chi tiết ở biểu mẫu phía dưới trước khi bấm Lưu.', 'success');
         } else {
-          const errData = await res.json();
-          throw new Error(errData.error || 'Gemini không phản hồi hoặc gặp lỗi xử lý.');
+          throw new Error('Dữ liệu quét không hợp lệ.');
         }
       } catch (err: any) {
         setScanError(err.message);
@@ -488,37 +435,109 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     if (savedToken) {
       setToken(savedToken);
       setIsAuthenticated(true);
-      fetchDashboardData(savedToken);
-      fetchCandidates(savedToken);
-      fetchMaterials();
-      fetchExams(savedToken);
+      
+      const loadAll = async () => {
+        try {
+          const cands = await candidateService.getCandidates();
+          setCandidates(cands);
+          calculateDashboardStats(cands);
+          
+          const mats = await materialService.getMaterials();
+          setMaterials(mats);
+          
+          fetchExams();
+          
+          const s = await settingsService.getSettings();
+          setLogoUrl(s.logoUrl || '');
+          setThemeColor(s.themeColor || 'indigo');
+          setSlogan(s.slogan || '');
+          setTeacherPhone(s.teacherPhone || '');
+          setTeacherEmail(s.teacherEmail || '');
+          setGeminiApiKey(s.geminiApiKey || '');
+          setTeacherName(s.teacherName || '');
+          setTeacherZalo(s.teacherZalo || '');
+          setTeacherFacebook(s.teacherFacebook || '');
+          setTeacherWebsite(s.teacherWebsite || '');
+          setTeacherAddress(s.teacherAddress || '');
+        } catch (err) {
+          console.error('Error loading initial admin data:', err);
+        }
+      };
+      loadAll();
     }
   }, []);
+
+  const calculateDashboardStats = (cands: any[]) => {
+    const total = cands.length;
+    const completed = cands.filter(c => c.submittedAt !== null).length;
+    const active = total - completed;
+    
+    let totalScore = 0;
+    let totalPercentage = 0;
+    let completedCount = 0;
+    
+    const bands = { A1: 0, A2: 0, B1: 0, B2: 0, C1: 0 };
+    
+    cands.forEach(c => {
+      if (c.submittedAt !== null && c.scores) {
+        completedCount++;
+        totalScore += c.scores.total || 0;
+        totalPercentage += c.scores.percentage || 0;
+        
+        const pct = c.scores.percentage || 0;
+        if (pct < 30) bands.A1++;
+        else if (pct < 50) bands.A2++;
+        else if (pct < 70) bands.B1++;
+        else if (pct < 85) bands.B2++;
+        else bands.C1++;
+      }
+    });
+    
+    setStats({
+      total,
+      completed,
+      active,
+      averageScore: completedCount > 0 ? Number((totalScore / completedCount).toFixed(1)) : 0,
+      averagePercentage: completedCount > 0 ? Math.round(totalPercentage / completedCount) : 0,
+      bands
+    });
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
 
     try {
-      const res = await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Mật khẩu quản trị viên không chính xác.');
+      const ok = await authService.login(password);
+      if (!ok) {
+        throw new Error('Mật khẩu quản trị viên không chính xác.');
       }
 
-      const data = await res.json();
-      localStorage.setItem('admin_token', data.token);
-      setToken(data.token);
+      localStorage.setItem('admin_token', 'firebase_auth_active');
+      setToken('firebase_auth_active');
       setIsAuthenticated(true);
-      fetchDashboardData(data.token);
-      fetchCandidates(data.token);
-      fetchMaterials();
-      fetchExams(data.token);
+      
+      const cands = await candidateService.getCandidates();
+      setCandidates(cands);
+      calculateDashboardStats(cands);
+      
+      const mats = await materialService.getMaterials();
+      setMaterials(mats);
+      
+      fetchExams();
+      
+      const s = await settingsService.getSettings();
+      setLogoUrl(s.logoUrl || '');
+      setThemeColor(s.themeColor || 'indigo');
+      setSlogan(s.slogan || '');
+      setTeacherPhone(s.teacherPhone || '');
+      setTeacherEmail(s.teacherEmail || '');
+      setGeminiApiKey(s.geminiApiKey || '');
+      setTeacherName(s.teacherName || '');
+      setTeacherZalo(s.teacherZalo || '');
+      setTeacherFacebook(s.teacherFacebook || '');
+      setTeacherWebsite(s.teacherWebsite || '');
+      setTeacherAddress(s.teacherAddress || '');
     } catch (err: any) {
       setLoginError(err.message || 'Đăng nhập thất bại.');
     }
@@ -532,30 +551,21 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     setViewingDetailId(null);
   };
 
-  const fetchDashboardData = async (adminToken: string) => {
+  const fetchDashboardData = async () => {
     try {
-      const res = await fetch('/api/admin/dashboard', {
-        headers: { 'Authorization': adminToken }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setStats(data);
-      }
+      const cands = await candidateService.getCandidates();
+      setCandidates(cands);
+      calculateDashboardStats(cands);
     } catch (e) {
       console.error('Error fetching admin stats:', e);
     }
   };
 
-  const fetchCandidates = async (adminToken: string) => {
+  const fetchCandidates = async () => {
     try {
-      const res = await fetch('/api/admin/candidates', {
-        headers: { 'Authorization': adminToken }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setCandidates(data.candidates);
-        setFilteredCandidates(data.candidates);
-      }
+      const cands = await candidateService.getCandidates();
+      setCandidates(cands);
+      calculateDashboardStats(cands);
     } catch (e) {
       console.error('Error fetching candidates list:', e);
     }
@@ -563,11 +573,8 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
 
   const fetchMaterials = async () => {
     try {
-      const res = await fetch('/api/materials');
-      if (res.ok) {
-        const data = await res.json();
-        setMaterials(data.materials || []);
-      }
+      const mats = await materialService.getMaterials();
+      setMaterials(mats || []);
     } catch (e) {
       console.error('Error fetching materials list:', e);
     }
@@ -575,17 +582,49 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
 
   const fetchCandidateDetails = async (id: string) => {
     try {
-      const res = await fetch(`/api/admin/candidates/${id}`, {
-        headers: { 'Authorization': token }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setSelectedCandidate(data.candidate);
-        setWritingScore(data.candidate.writingScore || 0);
-        setWritingComment(data.candidate.writingComment || '');
+      const cand = await candidateService.getCandidateById(id);
+      if (cand) {
+        setSelectedCandidate(cand);
+        setWritingScore(cand.writingScore || 0);
+        setWritingComment(cand.writingComment || '');
       }
     } catch (e) {
       console.error('Error fetching candidate details:', e);
+    }
+  };
+
+  const toggleExpandPhone = (phone: string) => {
+    setExpandedPhones((prev) =>
+      prev.includes(phone) ? prev.filter((p) => p !== phone) : [...prev, phone]
+    );
+  };
+
+  const handleToggleLockPhone = async (phone: string, currentIsLocked: boolean) => {
+    setLockLoadingPhone(phone);
+    try {
+      const newLockState = !currentIsLocked;
+      await candidateService.setCandidateLockStateByPhone(phone, newLockState);
+      
+      setAlertConfig({
+        show: true,
+        title: 'Thành công',
+        message: newLockState
+          ? `Đã khóa thí sinh có SĐT "${phone}" thành công! Thí sinh này sẽ không thể tham gia bất kỳ kỳ thi nào nữa.`
+          : `Đã mở khóa thí sinh có SĐT "${phone}" thành công!`,
+        type: 'success'
+      });
+      
+      // Refresh list
+      await fetchCandidates();
+    } catch (err: any) {
+      setAlertConfig({
+        show: true,
+        title: 'Lỗi',
+        message: err.message || 'Có lỗi xảy ra khi cập nhật trạng thái khóa.',
+        type: 'error'
+      });
+    } finally {
+      setLockLoadingPhone(null);
     }
   };
 
@@ -612,6 +651,34 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     setFilteredCandidates(result);
   }, [searchQuery, filterType, candidates]);
 
+  // Group candidates by phone for deduplicated candidate management
+  const groupedCandidates = React.useMemo(() => {
+    const groups: Record<string, {
+      phone: string;
+      fullName: string;
+      isLocked: boolean;
+      attempts: any[];
+    }> = {};
+
+    filteredCandidates.forEach((c) => {
+      const p = c.phone || 'N/A';
+      if (!groups[p]) {
+        groups[p] = {
+          phone: p,
+          fullName: c.fullName,
+          isLocked: !!c.isLocked,
+          attempts: []
+        };
+      }
+      groups[p].attempts.push(c);
+      if (c.isLocked) {
+        groups[p].isLocked = true;
+      }
+    });
+
+    return Object.values(groups);
+  }, [filteredCandidates]);
+
   const handleViewDetail = (id: string) => {
     setViewingDetailId(id);
     fetchCandidateDetails(id);
@@ -621,8 +688,8 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     setViewingDetailId(null);
     setSelectedCandidate(null);
     // Refresh list to show updated grades
-    fetchDashboardData(token);
-    fetchCandidates(token);
+    fetchDashboardData();
+    fetchCandidates();
   };
 
   // Handle Manual Writing grading submit
@@ -634,27 +701,11 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     setGradingSuccess(false);
 
     try {
-      const res = await fetch(`/api/admin/candidates/${selectedCandidate.id}/grade-writing`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token
-        },
-        body: JSON.stringify({
-          score: writingScore,
-          comment: writingComment
-        })
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Lỗi chấm điểm viết.');
-      }
-
-      const data = await res.json();
-      setSelectedCandidate(data.candidate);
+      const updatedCand = await candidateService.gradeWriting(selectedCandidate.id, writingScore, writingComment);
+      setSelectedCandidate(updatedCand);
       setGradingSuccess(true);
       setTimeout(() => setGradingSuccess(false), 3000);
+      fetchCandidates(); // Refresh list to update final scores
     } catch (err: any) {
       setAlertConfig({
         show: true,
@@ -684,15 +735,7 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
 
     if (type === 'delete') {
       try {
-        const res = await fetch(`/api/admin/candidates/${id}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': token }
-        });
-
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || 'Lỗi xóa thí sinh.');
-        }
+        await candidateService.deleteCandidate(id);
 
         setAlertConfig({
           show: true,
@@ -704,8 +747,7 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
         if (selectedCandidate && selectedCandidate.id === id) {
           handleCloseDetail();
         } else {
-          fetchDashboardData(token);
-          fetchCandidates(token);
+          fetchCandidates();
         }
       } catch (err: any) {
         setAlertConfig({
@@ -717,15 +759,7 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
       }
     } else if (type === 'reset') {
       try {
-        const res = await fetch(`/api/admin/candidates/${id}/reset`, {
-          method: 'POST',
-          headers: { 'Authorization': token }
-        });
-
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || 'Lỗi reset bài thi.');
-        }
+        await candidateService.resetCandidate(id);
 
         setAlertConfig({
           show: true,
@@ -737,8 +771,7 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
         if (selectedCandidate && selectedCandidate.id === id) {
           fetchCandidateDetails(id);
         } else {
-          fetchDashboardData(token);
-          fetchCandidates(token);
+          fetchCandidates();
         }
       } catch (err: any) {
         setAlertConfig({
@@ -771,23 +804,17 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
 
     setMaterialSubmitting(true);
     try {
-      const res = await fetch('/api/admin/materials', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token
-        },
-        body: JSON.stringify({
-          title: newMaterialTitle,
-          description: newMaterialDesc,
-          url: newMaterialUrl,
-          type: newMaterialType
-        })
-      });
+      const id = Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
+      const newMat = {
+        id,
+        title: newMaterialTitle.trim(),
+        description: newMaterialDesc.trim(),
+        url: newMaterialUrl.trim(),
+        type: newMaterialType,
+        createdAt: new Date().toISOString()
+      };
 
-      if (!res.ok) {
-        throw new Error('Không thể thêm tài liệu mới.');
-      }
+      await materialService.saveMaterial(newMat);
 
       setNewMaterialTitle('');
       setNewMaterialDesc('');
@@ -821,17 +848,7 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     if (!window.confirm('Bạn có chắc chắn muốn xóa tài liệu này không?')) return;
 
     try {
-      const res = await fetch(`/api/admin/materials/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': token
-        }
-      });
-
-      if (!res.ok) {
-        throw new Error('Không thể xóa tài liệu.');
-      }
-
+      await materialService.deleteMaterial(id);
       await fetchMaterials();
       
       setAlertConfig({
@@ -1096,6 +1113,254 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
                 })}
               </div>
             )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSettingsLoading(true);
+    try {
+      await settingsService.updateSettings({
+        logoUrl,
+        themeColor,
+        slogan,
+        teacherPhone,
+        teacherEmail,
+        geminiApiKey,
+        teacherName,
+        teacherZalo,
+        teacherFacebook,
+        teacherWebsite,
+        teacherAddress
+      });
+      showAlert('Thành công', 'Đã cập nhật cấu hình hệ thống thành công!', 'success');
+    } catch (err: any) {
+      showAlert('Thất bại', err.message || 'Lỗi lưu cấu hình.', 'error');
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword.trim()) {
+      showAlert('Lỗi', 'Vui lòng nhập mật khẩu mới.', 'error');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      showAlert('Lỗi', 'Mật khẩu xác nhận không khớp.', 'error');
+      return;
+    }
+    setPasswordChangeLoading(true);
+    try {
+      await authService.updateAdminPassword(newPassword.trim());
+      showAlert('Thành công', 'Đã thay đổi mật khẩu quản trị viên thành công!', 'success');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      showAlert('Thất bại', err.message || 'Lỗi thay đổi mật khẩu.', 'error');
+    } finally {
+      setPasswordChangeLoading(false);
+    }
+  };
+
+  const renderSettingsManager = () => {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-xl font-extrabold text-indigo-950 uppercase tracking-tight">Cấu hình hệ thống</h2>
+          <p className="text-xs text-slate-500">Tùy chỉnh giao diện, thông tin giáo viên, API Key quét đề bằng AI và mật khẩu quản trị viên.</p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* System Config Card */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide border-b border-slate-100 pb-3 flex items-center gap-2">
+              <Settings className="w-4 h-4 text-indigo-900" /> Cấu hình chung
+            </h3>
+            <form onSubmit={handleSaveSettings} className="space-y-4">
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-slate-700 uppercase">Logo URL</label>
+                <input
+                  type="text"
+                  placeholder="https://example.com/logo.png"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-slate-700 uppercase">Khẩu hiệu (Slogan)</label>
+                <input
+                  type="text"
+                  placeholder="Your English Journey Starts Here."
+                  value={slogan}
+                  onChange={(e) => setSlogan(e.target.value)}
+                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">Tên Giáo viên</label>
+                  <input
+                    type="text"
+                    placeholder="Teacher Anna"
+                    value={teacherName}
+                    onChange={(e) => setTeacherName(e.target.value)}
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">SĐT Giáo viên</label>
+                  <input
+                    type="text"
+                    placeholder="0987.654.321"
+                    value={teacherPhone}
+                    onChange={(e) => setTeacherPhone(e.target.value)}
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">Email Giáo viên</label>
+                  <input
+                    type="email"
+                    placeholder="teacher@english.edu.vn"
+                    value={teacherEmail}
+                    onChange={(e) => setTeacherEmail(e.target.value)}
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">Số Zalo hỗ trợ</label>
+                  <input
+                    type="text"
+                    placeholder="0987.654.321"
+                    value={teacherZalo}
+                    onChange={(e) => setTeacherZalo(e.target.value)}
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">Facebook URL</label>
+                  <input
+                    type="text"
+                    placeholder="https://facebook.com/teacher.anna"
+                    value={teacherFacebook}
+                    onChange={(e) => setTeacherFacebook(e.target.value)}
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">Website URL</label>
+                  <input
+                    type="text"
+                    placeholder="https://placement.edu.vn"
+                    value={teacherWebsite}
+                    onChange={(e) => setTeacherWebsite(e.target.value)}
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-slate-700 uppercase">Địa chỉ liên hệ</label>
+                <input
+                  type="text"
+                  placeholder="123 Đường Láng, Đống Đa, Hà Nội"
+                  value={teacherAddress}
+                  onChange={(e) => setTeacherAddress(e.target.value)}
+                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-slate-700 uppercase">Màu chủ đề (Theme Color)</label>
+                <select
+                  value={themeColor}
+                  onChange={(e) => setThemeColor(e.target.value)}
+                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                >
+                  <option value="indigo">Indigo (Xanh chàm)</option>
+                  <option value="emerald">Emerald (Xanh lục bảo)</option>
+                  <option value="blue">Blue (Xanh dương)</option>
+                  <option value="violet">Violet (Tím)</option>
+                  <option value="rose">Rose (Hồng hoa hồng)</option>
+                  <option value="slate">Slate (Xám đá)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                  GEMINI_API_KEY <span className="text-[9px] text-indigo-700 font-bold lowercase">(Mã quét đề AI)</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder="AI Gemini API Key"
+                  value={geminiApiKey}
+                  onChange={(e) => setGeminiApiKey(e.target.value)}
+                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-mono"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={settingsLoading}
+                className="bg-indigo-900 hover:bg-indigo-850 disabled:bg-slate-300 text-white font-bold py-2.5 px-5 rounded-xl text-xs shadow-md transition-colors cursor-pointer mt-2 w-full"
+              >
+                {settingsLoading ? 'Đang lưu...' : 'Lưu cấu hình'}
+              </button>
+            </form>
+          </div>
+
+          {/* Change Password Card */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide border-b border-slate-100 pb-3 flex items-center gap-2">
+              <Lock className="w-4 h-4 text-rose-600" /> Đổi mật khẩu Admin
+            </h3>
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-slate-700 uppercase">Mật khẩu mới</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Nhập mật khẩu mới"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs transition-all"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-slate-700 uppercase">Xác nhận mật khẩu</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Xác nhận mật khẩu mới"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs transition-all"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={passwordChangeLoading}
+                className="bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white font-bold py-2.5 px-5 rounded-xl text-xs shadow-md transition-colors cursor-pointer mt-2 w-full"
+              >
+                {passwordChangeLoading ? 'Đang cập nhật...' : 'Cập nhật mật khẩu'}
+              </button>
+            </form>
           </div>
         </div>
       </div>
@@ -2565,8 +2830,10 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
           </div>
         )) : adminTab === 'materials' ? (
           renderMaterialsManager()
-        ) : (
+        ) : adminTab === 'exams' ? (
           renderExamsManager()
+        ) : (
+          renderSettingsManager()
         )}
 
       </main>
