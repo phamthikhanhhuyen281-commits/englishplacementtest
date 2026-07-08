@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { AlertTriangle, BookOpen, ChevronRight, Phone, Award, ShieldAlert, User, Smartphone, FileText, Video, ExternalLink, Clock, Mail, Globe, MapPin } from 'lucide-react';
 import { examService } from '../services/examService';
+import { languageService, Language } from '../services/languageService';
+import LanguageToggle from './LanguageToggle';
 
 interface StartScreenProps {
   onRegister: (fullName: string, phone: string, examId: string) => Promise<{ success: boolean; error?: string }>;
@@ -11,6 +13,15 @@ interface StartScreenProps {
 }
 
 export default function StartScreen({ onRegister, loading, onAdminClick, settings = {} }: StartScreenProps) {
+  const [lang, setLang] = useState<Language>(languageService.getLanguage());
+  const t = (key: Parameters<typeof languageService.t>[0]) => languageService.t(key);
+
+  useEffect(() => {
+    return languageService.onChange((newLang) => {
+      setLang(newLang);
+    });
+  }, []);
+
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
@@ -92,17 +103,27 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
 
   return (
     <div id="start-screen-container" className="min-h-screen bg-slate-50 dark:bg-[#0b111e] flex flex-col justify-between">
-      {/* Top Banner Accent */}
-      <div className="h-2 bg-indigo-900 w-full" />
+      {/* Top Header Bar with Language Toggle */}
+      <header className="bg-indigo-950 text-white shadow-md select-none shrink-0 border-b border-indigo-900">
+        <div className="max-w-7xl mx-auto px-6 py-3.5 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Award className="w-5 h-5 text-indigo-400" />
+            <span className="text-[11px] sm:text-xs font-black tracking-wider uppercase text-slate-100">
+              {t('title')}
+            </span>
+          </div>
+          <LanguageToggle />
+        </div>
+      </header>
 
       {/* Main Container */}
-      <main className="max-w-4xl mx-auto px-4 py-12 flex-grow flex flex-col justify-center items-center">
+      <main className="max-w-4xl mx-auto px-4 py-12 flex-grow flex flex-col justify-center items-center w-full">
         {!showRegisterForm ? (
           <motion.div
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="text-center"
+            className="text-center w-full"
             id="welcome-card"
           >
             {/* Logo Section */}
@@ -121,10 +142,10 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
               )}
             </div>
 
-            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-indigo-950 dark:text-slate-100 mb-3 uppercase">
-              ENGLISH PLACEMENT TEST
+            <h1 className="text-3xl md:text-5xl font-black tracking-tight text-indigo-950 dark:text-slate-100 mb-3 uppercase">
+              {t('welcome_title')}
             </h1>
-            <p className="text-xl text-slate-600 dark:text-slate-300 font-medium mb-8 font-sans max-w-xl mx-auto">
+            <p className="text-base md:text-xl text-slate-600 dark:text-slate-300 font-medium mb-8 font-sans max-w-xl mx-auto">
               {settings.slogan || 'Your English Journey Starts Here.'}
             </p>
 
@@ -137,11 +158,10 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
                 <ShieldAlert className="w-6 h-6 text-red-600 dark:text-red-400 shrink-0 mr-3 mt-0.5" />
                 <div>
                   <h3 className="text-red-900 dark:text-red-200 font-bold text-lg mb-1 uppercase tracking-wide">
-                    Cảnh báo quan trọng cho thí sinh
+                    {t('anti_cheat_title')}
                   </h3>
                   <p className="text-red-700 dark:text-red-400 text-sm leading-relaxed">
-                    Thí sinh <strong>không được sử dụng từ điển, AI, công cụ dịch thuật</strong> hoặc nhờ người khác hỗ trợ. 
-                    Nếu không biết đáp án, hãy bỏ qua và tiếp tục làm bài. Hệ thống có cơ chế <strong>giám sát và khóa bài thi</strong> nếu phát hiện hành vi gian lận hoặc chuyển tab liên tục.
+                    {t('anti_cheat_text')}
                   </p>
                 </div>
               </div>
@@ -156,10 +176,10 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
                   </div>
                 </div>
                 <h3 className="text-red-900 dark:text-red-200 font-extrabold text-lg uppercase tracking-wide">
-                  Kỳ thi này hiện đang đóng
+                  {t('exam_closed_title')}
                 </h3>
                 <p className="text-red-700 dark:text-red-400 text-xs leading-relaxed max-w-md mx-auto">
-                  Kỳ thi <strong>{exams.find((e) => e.id === selectedExamId)?.title || selectedExamId}</strong> đã tạm khóa hoặc kết thúc thời gian nhận bài. Quý phụ huynh và học sinh vui lòng liên hệ Giáo viên quản trị theo thông tin dưới đây để được hướng dẫn thêm.
+                  {t('exam_closed_desc')}
                 </p>
 
                 {/* Always-visible Contact Card when closed */}
@@ -253,7 +273,7 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
                     onClick={() => setShowRegisterForm(true)}
                     className="flex-1 bg-indigo-900 hover:bg-indigo-800 text-white font-semibold py-4 px-8 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center text-lg gap-2 cursor-pointer"
                   >
-                    Start Test <ChevronRight className="w-5 h-5" />
+                    {t('start_test')} <ChevronRight className="w-5 h-5" />
                   </button>
                   
                   <button
@@ -261,7 +281,7 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
                     onClick={() => setShowTeacherContact(!showTeacherContact)}
                     className="flex-1 bg-white dark:bg-slate-800 border-2 border-indigo-900 dark:border-slate-700 hover:bg-indigo-50 dark:hover:bg-slate-700 text-indigo-900 dark:text-slate-200 font-semibold py-4 px-6 rounded-xl transition-all duration-200 flex items-center justify-center text-lg gap-2 cursor-pointer"
                   >
-                    <Phone className="w-5 h-5" /> Contact Teacher
+                    <Phone className="w-5 h-5" /> {t('contact_teacher')}
                   </button>
                 </div>
 
@@ -380,10 +400,10 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
                 onClick={() => setShowRegisterForm(false)}
                 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-white text-sm"
               >
-                Quay lại
+                {t('back')}
               </button>
-              <h2 className="text-xl font-bold">ĐĂNG KÝ THÔNG TIN</h2>
-              <p className="text-xs text-indigo-200 mt-1">Thông tin này dùng để lưu trữ và hiển thị kết quả thi cho giáo viên</p>
+              <h2 className="text-xl font-bold uppercase">{t('register_title')}</h2>
+              <p className="text-xs text-indigo-200 mt-1">{t('register_desc')}</p>
             </div>
 
             {/* Form Body */}
@@ -397,13 +417,13 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1">
-                  <User className="w-3.5 h-3.5 text-indigo-900 dark:text-indigo-400" /> Họ và tên thí sinh
+                  <User className="w-3.5 h-3.5 text-indigo-900 dark:text-indigo-400" /> {t('fullname')}
                 </label>
                 <input
                   id="reg-fullname"
                   type="text"
                   required
-                  placeholder="Ví dụ: Nguyễn Văn A"
+                  placeholder={t('fullname_placeholder')}
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   className="w-full px-4 py-3 border-2 border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:border-indigo-900 dark:focus:border-indigo-400 focus:outline-none transition-colors"
@@ -412,32 +432,32 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1">
-                  <Smartphone className="w-3.5 h-3.5 text-indigo-900 dark:text-indigo-400" /> Số điện thoại
+                  <Smartphone className="w-3.5 h-3.5 text-indigo-900 dark:text-indigo-400" /> {t('phone')}
                 </label>
                 <input
                   id="reg-phone"
                   type="tel"
                   required
-                  placeholder="Ví dụ: 0912345678"
+                  placeholder={t('phone_placeholder')}
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   className="w-full px-4 py-3 border-2 border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:border-indigo-900 dark:focus:border-indigo-400 focus:outline-none transition-colors"
                 />
                 <p className="text-slate-400 dark:text-slate-500 text-xs">
-                  * Mỗi SĐT chỉ được làm bài 1 lần duy nhất. Nếu bạn đang làm dở, nhập đúng SĐT để tiếp tục làm tiếp.
+                  {t('phone_notice')}
                 </p>
               </div>
 
               {exams.length > 0 && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1">
-                    <FileText className="w-3.5 h-3.5 text-indigo-900 dark:text-indigo-400" /> Chọn đề thi / Kỳ thi
+                     <FileText className="w-3.5 h-3.5 text-indigo-900 dark:text-indigo-400" /> {t('choose_exam')}
                   </label>
                   {isExamLocked ? (
                     <div className="w-full px-4 py-3 bg-indigo-50 dark:bg-slate-900 border-2 border-indigo-200 dark:border-slate-700 text-indigo-950 dark:text-slate-200 font-bold rounded-xl flex items-center gap-2 text-xs">
-                      <span className="bg-indigo-900 text-white text-[10px] uppercase font-black px-1.5 py-0.5 rounded shrink-0">LINK KHÓA</span>
+                      <span className="bg-indigo-900 text-white text-[10px] uppercase font-black px-1.5 py-0.5 rounded shrink-0">{t('link_locked')}</span>
                       <span className="truncate">
-                        {exams.find((e) => e.id === selectedExamId)?.title || selectedExamId} ({exams.find((e) => e.id === selectedExamId)?.durationMinutes || 45} phút)
+                        {exams.find((e) => e.id === selectedExamId)?.title || selectedExamId} ({exams.find((e) => e.id === selectedExamId)?.durationMinutes || 45} mins)
                       </span>
                     </div>
                   ) : (
@@ -449,14 +469,14 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
                     >
                       {exams.map((ex) => (
                         <option key={ex.id} value={ex.id}>
-                          {ex.title} ({ex.durationMinutes} phút)
+                          {ex.title} ({ex.durationMinutes} mins)
                         </option>
                       ))}
                     </select>
                   )}
                   {isExamLocked && (
                     <p className="text-[11px] text-indigo-800 dark:text-indigo-400 italic leading-snug">
-                      * Thí sinh đang truy cập thông qua liên kết trực tiếp. Bạn chỉ được phép thực hiện duy nhất bài thi này.
+                      {t('direct_link_notice')}
                     </p>
                   )}
                 </div>
@@ -467,7 +487,7 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
                 <div className="flex items-start gap-2">
                   <input type="checkbox" required id="agree-check" className="mt-0.5 accent-indigo-900" />
                   <label htmlFor="agree-check" className="cursor-pointer">
-                    Tôi cam kết tự làm bài thi bằng năng lực thực tế, không sử dụng sự hỗ trợ của từ điển, AI hoặc người khác.
+                    {t('agree_commit')}
                   </label>
                 </div>
               </div>
@@ -476,9 +496,9 @@ export default function StartScreen({ onRegister, loading, onAdminClick, setting
                 id="submit-register-btn"
                 type="submit"
                 disabled={loading}
-                className="w-full bg-indigo-900 hover:bg-indigo-850 disabled:bg-indigo-300 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-150 flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                className="w-full bg-indigo-900 hover:bg-indigo-850 disabled:bg-indigo-300 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-150 flex items-center justify-center gap-2 shadow-md cursor-pointer uppercase tracking-wider text-xs"
               >
-                {loading ? 'Đang xác thực thông tin...' : 'Bắt đầu làm bài thi'} <ChevronRight className="w-5 h-5" />
+                {loading ? t('submitting_info') : t('start_now')} <ChevronRight className="w-5 h-5" />
               </button>
             </form>
           </motion.div>

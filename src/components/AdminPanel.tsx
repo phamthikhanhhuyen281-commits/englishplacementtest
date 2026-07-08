@@ -223,6 +223,7 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
   const [exams, setExams] = useState<any[]>([]);
   const [examLoading, setExamLoading] = useState(false);
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
+  const [examActiveSubTab, setExamActiveSubTab] = useState<'candidates' | 'settings'>('candidates');
   const [examTitle, setExamTitle] = useState('');
   const [examDesc, setExamDesc] = useState('');
   const [examDuration, setExamDuration] = useState<number>(60);
@@ -231,6 +232,14 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
   const [examQuestionsJson, setExamQuestionsJson] = useState('');
   const [scanLoading, setScanLoading] = useState(false);
   const [scanError, setScanError] = useState('');
+
+  // Visual Question Builder states
+  const [qbSkill, setQbSkill] = useState<string>('listeningPart1');
+  const [qbQuestionText, setQbQuestionText] = useState<string>('');
+  const [qbAudioUrl, setQbAudioUrl] = useState<string>('');
+  const [qbOptions, setQbOptions] = useState<string[]>(['', '', '', '']);
+  const [qbCorrectAnswer, setQbCorrectAnswer] = useState<string>('A');
+  const [qbPassage, setQbPassage] = useState<string>('');
 
   // Custom alert action
   const showAlert = (title: string, message: string, type: 'success' | 'error') => {
@@ -366,6 +375,110 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     setExamAudio1Url(exam.audio1Url || '');
     setExamAudio2Url(exam.audio2Url || '');
     setExamQuestionsJson(JSON.stringify(exam.questions || {}, null, 2));
+    setExamActiveSubTab('candidates');
+  };
+
+  const handleAddToQuestionsJson = () => {
+    if (!qbQuestionText.trim() && qbSkill !== 'readingPartA' && qbSkill !== 'readingPartB') {
+      showAlert('Lỗi', 'Vui lòng nhập nội dung câu hỏi hoặc đề bài!', 'error');
+      return;
+    }
+
+    let currentObj: any = {};
+    try {
+      currentObj = examQuestionsJson.trim() ? JSON.parse(examQuestionsJson) : {};
+    } catch (e) {
+      showAlert('Lỗi cú pháp', 'Dữ liệu JSON hiện tại đang bị lỗi cú pháp. Vui lòng bấm "Tải Cấu trúc Mẫu (JSON Template)" để làm mới trước khi tự động thêm.', 'error');
+      return;
+    }
+
+    // Ensure fundamental structures exist
+    if (!currentObj.listeningPart1) currentObj.listeningPart1 = [];
+    if (!currentObj.listeningPart2) currentObj.listeningPart2 = [];
+    if (!currentObj.grammar) currentObj.grammar = [];
+    if (!currentObj.vocabulary) currentObj.vocabulary = [];
+    if (!currentObj.readingPassage) {
+      currentObj.readingPassage = {
+        passagePartA: "",
+        questionsPartA: [],
+        passagePartB: "",
+        questionsPartB: []
+      };
+    }
+    if (!currentObj.writingQuestions) currentObj.writingQuestions = [];
+    if (!currentObj.speakingQuestions) currentObj.speakingQuestions = [];
+
+    const uniqueId = `${qbSkill}_${Date.now()}`;
+
+    if (qbSkill === 'listeningPart1') {
+      currentObj.listeningPart1.push({
+        id: uniqueId,
+        audioUrl: qbAudioUrl.trim() || undefined,
+        question: qbQuestionText.trim(),
+        options: [...qbOptions],
+        answer: qbCorrectAnswer
+      });
+    } else if (qbSkill === 'listeningPart2') {
+      currentObj.listeningPart2.push({
+        id: uniqueId,
+        question: qbQuestionText.trim(),
+        options: [...qbOptions],
+        answer: qbCorrectAnswer
+      });
+    } else if (qbSkill === 'grammar') {
+      currentObj.grammar.push({
+        id: uniqueId,
+        question: qbQuestionText.trim(),
+        options: [...qbOptions],
+        answer: qbCorrectAnswer
+      });
+    } else if (qbSkill === 'vocabulary') {
+      currentObj.vocabulary.push({
+        id: uniqueId,
+        question: qbQuestionText.trim(),
+        options: [...qbOptions],
+        answer: qbCorrectAnswer
+      });
+    } else if (qbSkill === 'readingPartA') {
+      if (qbPassage.trim()) {
+        currentObj.readingPassage.passagePartA = qbPassage.trim();
+      }
+      if (qbQuestionText.trim()) {
+        currentObj.readingPassage.questionsPartA.push({
+          id: uniqueId,
+          question: qbQuestionText.trim(),
+          options: [...qbOptions],
+          answer: qbCorrectAnswer
+        });
+      }
+    } else if (qbSkill === 'readingPartB') {
+      if (qbPassage.trim()) {
+        currentObj.readingPassage.passagePartB = qbPassage.trim();
+      }
+      if (qbQuestionText.trim()) {
+        currentObj.readingPassage.questionsPartB.push({
+          id: uniqueId,
+          question: qbQuestionText.trim(),
+          options: [...qbOptions],
+          answer: qbCorrectAnswer
+        });
+      }
+    } else if (qbSkill === 'writing') {
+      currentObj.writingQuestions.push({
+        id: uniqueId,
+        prompt: qbQuestionText.trim()
+      });
+    } else if (qbSkill === 'speaking') {
+      currentObj.speakingQuestions.push({
+        id: uniqueId,
+        prompt: qbQuestionText.trim(),
+        allowRecord: true
+      });
+    }
+
+    setExamQuestionsJson(JSON.stringify(currentObj, null, 2));
+    setQbQuestionText('');
+    showAlert('Thành công', 'Đã chèn câu hỏi mới vào cấu trúc JSON bên dưới!', 'success');
   };
 
   const handleUploadAudio = async (e: React.ChangeEvent<HTMLInputElement>, audioSlot: 1 | 2) => {
@@ -387,6 +500,175 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     } finally {
       setExamLoading(false);
     }
+  };
+
+  const renderVisualQuestionBuilder = () => {
+    return (
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4 shadow-sm">
+        <div className="flex items-center gap-1.5 border-b border-slate-200 pb-2">
+          <Sparkles className="w-4 h-4 text-indigo-950" />
+          <h4 className="text-[10px] font-black uppercase text-indigo-950 tracking-wider">
+            TRÌNH THÊM CÂU HỎI TRỰC QUAN (VISUAL QUESTION BUILDER)
+          </h4>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Skill Selector */}
+          <div className="space-y-1">
+            <label className="block text-[9px] font-bold text-slate-500 uppercase">1. Chọn kỹ năng (Skill)</label>
+            <select
+              value={qbSkill}
+              onChange={(e) => setQbSkill(e.target.value)}
+              className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-900 bg-white"
+            >
+              <option value="listeningPart1">Listening Part 1 (Có Tranh / Ảnh minh họa)</option>
+              <option value="listeningPart2">Listening Part 2 (Hội thoại / Độc thoại ngắn)</option>
+              <option value="grammar">Grammar (Ngữ pháp trắc nghiệm)</option>
+              <option value="vocabulary">Vocabulary (Từ vựng trắc nghiệm)</option>
+              <option value="readingPartA">Reading Part A (Bài đọc điền từ trắc nghiệm)</option>
+              <option value="readingPartB">Reading Part B (Bài đọc đọc hiểu trắc nghiệm)</option>
+              <option value="writing">Writing (Viết luận tự luận)</option>
+              <option value="speaking">Speaking (Nói - Học sinh thu âm câu trả lời)</option>
+            </select>
+          </div>
+
+          {/* If Listening Part 1: allow adding audio URL / Upload file */}
+          {qbSkill === 'listeningPart1' && (
+            <div className="space-y-1">
+              <label className="block text-[9px] font-bold text-slate-500 uppercase">
+                2. Link Audio hoặc Tải file nghe câu này (Nếu có)
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Nhập URL file mp3..."
+                  value={qbAudioUrl}
+                  onChange={(e) => setQbAudioUrl(e.target.value)}
+                  className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-1 focus:ring-indigo-900 bg-white"
+                />
+                <label className="bg-indigo-900 hover:bg-indigo-850 text-white text-[10px] px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors font-bold shrink-0 flex items-center justify-center">
+                  Tải file
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        try {
+                          const url = await storageService.uploadFile(file, 'exams/questions/audio');
+                          setQbAudioUrl(url);
+                          showAlert('Thành công', 'Đã tải lên audio cho câu hỏi!', 'success');
+                        } catch (err: any) {
+                          showAlert('Lỗi', err.message, 'error');
+                        }
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* If Reading Part A or Part B: Passage input */}
+          {(qbSkill === 'readingPartA' || qbSkill === 'readingPartB') && (
+            <div className="md:col-span-2 space-y-1">
+              <label className="block text-[9px] font-bold text-slate-500 uppercase">
+                2. Đoạn văn đọc hiểu (Reading Passage) - Nhập một lần cho toàn bài đọc
+              </label>
+              <textarea
+                placeholder="Nhập đoạn văn đọc hiểu tại đây..."
+                value={qbPassage}
+                onChange={(e) => setQbPassage(e.target.value)}
+                rows={3}
+                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-900 bg-white"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Question Text Prompt */}
+        <div className="space-y-1">
+          <label className="block text-[9px] font-bold text-slate-500 uppercase">
+            {qbSkill === 'writing' ? '2. Đề bài viết luận' : qbSkill === 'speaking' ? '2. Đề bài / Câu hỏi nói ghi âm (Speaking Record Prompt)' : '3. Câu hỏi (Question Text)'}
+          </label>
+          <input
+            type="text"
+            placeholder={
+              qbSkill === 'writing'
+                ? "Ví dụ: Write an essay (150-200 words) about your family..."
+                : qbSkill === 'speaking'
+                ? "Ví dụ: Describe a memorable trip you took recently..."
+                : "Ví dụ: What is the correct form of 'be' in 'He ___ a doctor'?"
+            }
+            value={qbQuestionText}
+            onChange={(e) => setQbQuestionText(e.target.value)}
+            className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-900 bg-white"
+          />
+        </div>
+
+        {/* If NOT writing or speaking: render Multiple Choice Options */}
+        {qbSkill !== 'writing' && qbSkill !== 'speaking' && (
+          <div className="space-y-3 border-t border-slate-150 pt-3">
+            <label className="block text-[9px] font-bold text-slate-500 uppercase">4. Các phương án lựa chọn & Đáp án đúng</label>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {qbOptions.map((opt, idx) => {
+                const letter = String.fromCharCode(65 + idx); // A, B, C, D
+                return (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="font-bold text-xs text-indigo-950 w-4 text-center">{letter}.</span>
+                    <input
+                      type="text"
+                      placeholder={`Phương án ${letter}...`}
+                      value={opt}
+                      onChange={(e) => {
+                        const newOpts = [...qbOptions];
+                        newOpts[idx] = e.target.value;
+                        setQbOptions(newOpts);
+                      }}
+                      className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-900 bg-white"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Correct Answer dropdown */}
+            <div className="flex items-center gap-3 w-40">
+              <label className="block text-[10px] font-bold text-slate-600 shrink-0">Đáp án đúng:</label>
+              <select
+                value={qbCorrectAnswer}
+                onChange={(e) => setQbCorrectAnswer(e.target.value)}
+                className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-900 bg-white"
+              >
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+                <option value="D">D</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* If speaking: notify about recording block */}
+        {qbSkill === 'speaking' && (
+          <div className="p-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] rounded-lg font-bold flex items-center gap-1.5">
+            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Đề thi Speaking này sẽ kích hoạt tính năng Ghi âm micro trực tiếp cho học sinh trả lời trên website.</span>
+          </div>
+        )}
+
+        {/* Add question button */}
+        <button
+          type="button"
+          onClick={handleAddToQuestionsJson}
+          className="w-full py-2.5 bg-indigo-950 hover:bg-indigo-900 text-white font-black text-xs rounded-xl shadow-md transition-all cursor-pointer text-center uppercase tracking-wider"
+        >
+          Chèn câu hỏi này vào cấu trúc đề thi bên dưới ↓
+        </button>
+      </div>
+    );
   };
 
   const handleAIScanExam = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2034,173 +2316,19 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
             )}
           </div>
 
-          {/* RIGHT: Create / Edit Form & AI Scan (7 cols) */}
+          {/* RIGHT: Tabbed interface for participants or edit settings */}
           <div className="lg:col-span-7 space-y-6">
-            
-            {/* AI Scan box */}
-            <div className="bg-indigo-950 text-white rounded-2xl p-5 shadow-md border border-indigo-900 relative overflow-hidden">
-              <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-indigo-900/40 rounded-full blur-3xl pointer-events-none" />
-              
-              <div className="flex items-center gap-2 mb-3">
-                <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-                <h4 className="text-xs font-black uppercase tracking-wide text-amber-400">QUÉT ĐỀ BẰNG AI (AI EXAM SCANNER)</h4>
-              </div>
-              <p className="text-[11px] text-indigo-200 leading-relaxed mb-4">
-                Tải lên một file ảnh đề thi hoặc file PDF. Trí tuệ nhân tạo Gemini AI sẽ tự động phân tích và bóc tách dữ liệu câu hỏi (Listening, Reading, Grammar, Vocabulary, Writing, Speaking) rồi điền tự động cấu trúc đề thi số cho bạn.
-              </p>
-
-              <div className="relative border-2 border-dashed border-indigo-700/60 hover:border-indigo-500 rounded-xl p-4 bg-indigo-900/20 text-center transition-all">
-                {scanLoading ? (
-                  <div className="py-4 flex flex-col items-center justify-center space-y-2">
-                    <div className="w-7 h-7 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-                    <p className="text-xs font-bold text-amber-300">AI đang quét và phân tích đề thi... Vui lòng chờ 10-20 giây...</p>
-                  </div>
-                ) : (
-                  <label className="cursor-pointer block py-2">
-                    <input 
-                      type="file" 
-                      accept="image/*,application/pdf" 
-                      className="hidden" 
-                      onChange={handleAIScanExam}
-                    />
-                    <Sparkles className="w-6 h-6 text-indigo-400 mx-auto mb-2" />
-                    <span className="text-xs font-bold text-indigo-200 block">Kéo thả hoặc click chọn file Đề thi (Ảnh hoặc PDF)</span>
-                    <span className="text-[9px] text-indigo-400 block mt-1">Hỗ trợ .png, .jpg, .jpeg, .pdf (Quét bằng Gemini-3.5-Flash)</span>
-                  </label>
-                )}
-              </div>
-
-              {scanError && (
-                <div className="mt-3 p-2 bg-rose-500/20 border border-rose-500/30 rounded-lg text-[10px] text-rose-300">
-                  Lỗi quét: {scanError}
-                </div>
-              )}
-            </div>
-
-            {/* Main Form */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-              <h3 className="text-xs font-extrabold text-slate-700 uppercase tracking-wide border-b border-slate-100 pb-3 mb-4 flex items-center gap-2">
-                <FileText className="w-4 h-4 text-indigo-900" />
-                <span>{editingExamId ? `CẬP NHẬT ĐỀ THI: ${examTitle}` : 'THÊM ĐỀ THI THỦ CÔNG'}</span>
-              </h3>
-
-              <form onSubmit={editingExamId ? handleUpdateExam : handleCreateExam} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="md:col-span-2 space-y-1">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase">Tiêu đề đề thi</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Ví dụ: Đề thi thử năng lực tiếng Anh B1 - Kỳ thi tháng 7"
-                      value={examTitle}
-                      onChange={(e) => setExamTitle(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-semibold"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase">Thời gian làm bài (Phút)</label>
-                    <input
-                      type="number"
-                      required
-                      min={15}
-                      max={180}
-                      value={examDuration}
-                      onChange={(e) => setExamDuration(parseInt(e.target.value) || 60)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-mono font-bold"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase">Mô tả đề thi</label>
-                  <textarea
-                    placeholder="Mô tả tóm tắt mục tiêu đề thi hoặc đối tượng học sinh hướng tới..."
-                    value={examDesc}
-                    onChange={(e) => setExamDesc(e.target.value)}
-                    rows={2}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 pt-4">
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase">File Nghe Audio 1 (Part 1)</label>
-                    <input
-                      type="text"
-                      placeholder="Nhập link audio hoặc tải file bên dưới..."
-                      value={examAudio1Url}
-                      onChange={(e) => setExamAudio1Url(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-mono mb-1.5"
-                    />
-                    <label className="inline-flex items-center gap-1 text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded cursor-pointer transition-colors font-bold">
-                      <Download className="w-3 h-3 transform rotate-180" /> Tải lên Audio 1
-                      <input 
-                        type="file" 
-                        accept="audio/*" 
-                        className="hidden" 
-                        onChange={(e) => handleUploadAudio(e, 1)} 
-                      />
-                    </label>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase">File Nghe Audio 2 (Part 2)</label>
-                    <input
-                      type="text"
-                      placeholder="Nhập link audio hoặc tải file bên dưới..."
-                      value={examAudio2Url}
-                      onChange={(e) => setExamAudio2Url(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-mono mb-1.5"
-                    />
-                    <label className="inline-flex items-center gap-1 text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded cursor-pointer transition-colors font-bold">
-                      <Download className="w-3 h-3 transform rotate-180" /> Tải lên Audio 2
-                      <input 
-                        type="file" 
-                        accept="audio/*" 
-                        className="hidden" 
-                        onChange={(e) => handleUploadAudio(e, 2)} 
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                <div className="space-y-1 border-t border-slate-100 pt-4">
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase">Cấu trúc dữ liệu Câu hỏi (JSON Database Schema)</label>
+            {editingExamId ? (
+              <>
+                {/* Active Exam Header info with sub-tabs */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-[10px] bg-indigo-100 text-indigo-900 border border-indigo-200 font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wider">Kỳ thi đang chọn</span>
+                      <h4 className="text-base font-black text-indigo-950 uppercase tracking-wide mt-1">{examTitle}</h4>
+                      <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{examDesc || 'Không có mô tả.'}</p>
+                    </div>
                     <button
-                      type="button"
-                      onClick={handleLoadJsonTemplate}
-                      className="text-[10px] font-extrabold text-indigo-900 hover:underline inline-flex items-center gap-1"
-                    >
-                      <Sparkles className="w-3 h-3" /> Tải Cấu trúc Mẫu (JSON Template)
-                    </button>
-                  </div>
-                  <textarea
-                    required
-                    placeholder="Dán JSON chứa các câu hỏi phần nghe, đọc, nói, viết, từ vựng và ngữ pháp tại đây..."
-                    value={examQuestionsJson}
-                    onChange={(e) => setExamQuestionsJson(e.target.value)}
-                    rows={12}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-mono"
-                  />
-                  <p className="text-[9px] text-slate-400 leading-normal">
-                    * Đảm bảo JSON có định dạng hợp lệ. Nếu quét qua AI Scanner phía trên, phần câu hỏi này sẽ tự động điền cấu trúc tương thích 100% với trình thi của học sinh.
-                  </p>
-                </div>
-
-                <div className="flex gap-3 pt-3 border-t border-slate-100">
-                  <button
-                    type="submit"
-                    disabled={examLoading}
-                    className="flex-1 bg-indigo-900 hover:bg-indigo-850 disabled:bg-indigo-300 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    {examLoading ? 'Đang xử lý...' : (editingExamId ? 'LƯU THAY ĐỔI' : 'LƯU ĐỀ THI')}
-                  </button>
-
-                  {(editingExamId || examTitle || examQuestionsJson) && (
-                    <button
-                      type="button"
                       onClick={() => {
                         setEditingExamId(null);
                         setExamTitle('');
@@ -2210,15 +2338,442 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
                         setExamAudio2Url('');
                         setExamQuestionsJson('');
                       }}
-                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-xs transition-all cursor-pointer"
+                      className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-1.5 px-3 rounded-lg transition-all cursor-pointer"
                     >
-                      Hủy bỏ / Tạo mới
+                      Hủy chọn / Tạo mới
                     </button>
-                  )}
-                </div>
-              </form>
-            </div>
+                  </div>
 
+                  {/* Sub-tabs selector */}
+                  <div className="flex border-b border-slate-150 select-none">
+                    <button
+                      onClick={() => setExamActiveSubTab('candidates')}
+                      className={`flex-1 py-2.5 font-bold text-xs text-center border-b-2 transition-all cursor-pointer ${
+                        examActiveSubTab === 'candidates'
+                          ? 'border-indigo-900 text-indigo-950 bg-indigo-50/10'
+                          : 'border-transparent text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      Thí sinh tham gia ({candidates.filter(c => c.examId === editingExamId).length})
+                    </button>
+                    <button
+                      onClick={() => setExamActiveSubTab('settings')}
+                      className={`flex-1 py-2.5 font-bold text-xs text-center border-b-2 transition-all cursor-pointer ${
+                        examActiveSubTab === 'settings'
+                          ? 'border-indigo-900 text-indigo-950 bg-indigo-50/10'
+                          : 'border-transparent text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      Cài đặt & Sửa đề thi
+                    </button>
+                  </div>
+                </div>
+
+                {examActiveSubTab === 'candidates' ? (
+                  /* SUBTAB 1: CANDIDATES LIST FOR SELECTED EXAM */
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                      <h3 className="text-xs font-extrabold text-slate-700 uppercase tracking-wide">
+                        Danh sách học sinh tham gia kỳ thi này
+                      </h3>
+                      <span className="text-[10px] font-bold text-slate-400 font-mono">
+                        Exam ID: {editingExamId}
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      {candidates.filter(c => c.examId === editingExamId).length === 0 ? (
+                        <div className="text-center py-12 text-slate-400 text-xs italic bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                          Chưa có học sinh nào tham gia hoặc nộp bài cho đề thi này.
+                        </div>
+                      ) : (
+                        <table className="w-full text-left border-collapse text-[11px] font-medium text-slate-700">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
+                              <th className="py-2.5 px-3">Học sinh</th>
+                              <th className="py-2.5 px-3 text-center">Tab Switches</th>
+                              <th className="py-2.5 px-3 text-center">Listening</th>
+                              <th className="py-2.5 px-3 text-center">Grammar</th>
+                              <th className="py-2.5 px-3 text-center">Vocab</th>
+                              <th className="py-2.5 px-3 text-center">Reading</th>
+                              <th className="py-2.5 px-3 text-center">Writing</th>
+                              <th className="py-2.5 px-3 text-center">Tổng điểm</th>
+                              <th className="py-2.5 px-3 text-right">Chi tiết</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {candidates.filter(c => c.examId === editingExamId).map((c) => {
+                              const isCompleted = c.submittedAt !== null;
+                              return (
+                                <tr key={c.id} className="hover:bg-slate-50/50 transition-colors">
+                                  <td className="py-3 px-3">
+                                    <span className="font-bold text-slate-900 block text-xs">{c.fullName}</span>
+                                    <span className="text-[9px] text-indigo-950 font-mono font-bold block">{c.phone}</span>
+                                  </td>
+                                  <td className="py-3 px-3 text-center font-bold">
+                                    {countTabSwitches(c) > 0 ? (
+                                      <span className="inline-block px-1.5 py-0.5 rounded bg-red-500 text-white text-[9px] font-black animate-pulse">
+                                        GIÁN LẬN ({countTabSwitches(c)})
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 text-[9px]">Không có</span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-3 text-center font-mono font-bold">{isCompleted ? `${c.scores?.listening}/17` : '-'}</td>
+                                  <td className="py-3 px-3 text-center font-mono font-bold">{isCompleted ? `${c.scores?.grammar}/30` : '-'}</td>
+                                  <td className="py-3 px-3 text-center font-mono font-bold">{isCompleted ? `${c.scores?.vocabulary}/22` : '-'}</td>
+                                  <td className="py-3 px-3 text-center font-mono font-bold">{isCompleted ? `${c.scores?.reading}/6` : '-'}</td>
+                                  <td className="py-3 px-3 text-center font-mono font-bold text-purple-900 bg-purple-50/20">{isCompleted ? `${c.writingScore}/10` : '-'}</td>
+                                  <td className="py-3 px-3 text-center">
+                                    {isCompleted ? (
+                                      <div className="space-y-0.5">
+                                        <strong className="text-indigo-950 text-xs font-black font-mono bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded inline-block">{c.scores?.total}</strong>
+                                      </div>
+                                    ) : (
+                                      <span className="inline-block px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[9px] font-bold uppercase animate-pulse">Làm dở...</span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-3 text-right">
+                                    <div className="flex justify-end items-center gap-1.5">
+                                      <button
+                                        onClick={() => handleViewDetail(c.id)}
+                                        className="bg-white hover:bg-indigo-50 text-indigo-900 border border-indigo-900 font-bold py-1 px-2 rounded-lg hover:shadow-xs transition-colors cursor-pointer text-[10px]"
+                                      >
+                                        Chi tiết
+                                      </button>
+                                      <button
+                                        onClick={() => handleResetCandidate(c.id, c.fullName)}
+                                        title="Reset lượt làm bài"
+                                        className="p-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg hover:shadow-xs transition-colors cursor-pointer"
+                                      >
+                                        <RotateCcw className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteCandidate(c.id, c.fullName)}
+                                        title="Xóa vĩnh viễn thí sinh"
+                                        className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-250 rounded-lg hover:shadow-xs transition-colors cursor-pointer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* SUBTAB 2: EDIT METADATA & QUESTIONS OF THE SELECTED EXAM */
+                  <>
+                    {/* AI Scan box */}
+                    <div className="bg-indigo-950 text-white rounded-2xl p-5 shadow-md border border-indigo-900 relative overflow-hidden">
+                      <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-indigo-900/40 rounded-full blur-3xl pointer-events-none" />
+                      
+                      <div className="flex items-center gap-2 mb-3">
+                        <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                        <h4 className="text-xs font-black uppercase tracking-wide text-amber-400">QUÉT ĐỀ BẰNG AI (AI EXAM SCANNER)</h4>
+                      </div>
+                      <p className="text-[11px] text-indigo-200 leading-relaxed mb-4">
+                        Tải lên một file ảnh đề thi hoặc file PDF. Trí tuệ nhân tạo Gemini AI sẽ tự động phân tích và bóc tách dữ liệu câu hỏi rồi điền tự động cấu trúc đề thi số cho bạn.
+                      </p>
+
+                      <div className="relative border-2 border-dashed border-indigo-700/60 hover:border-indigo-500 rounded-xl p-4 bg-indigo-900/20 text-center transition-all">
+                        {scanLoading ? (
+                          <div className="py-4 flex flex-col items-center justify-center space-y-2">
+                            <div className="w-7 h-7 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                            <p className="text-xs font-bold text-amber-300">AI đang quét và phân tích đề thi... Vui lòng chờ 10-20 giây...</p>
+                          </div>
+                        ) : (
+                          <label className="cursor-pointer block py-2">
+                            <input 
+                              type="file" 
+                              accept="image/*,application/pdf" 
+                              className="hidden" 
+                              onChange={handleAIScanExam}
+                            />
+                            <Sparkles className="w-6 h-6 text-indigo-400 mx-auto mb-2" />
+                            <span className="text-xs font-bold text-indigo-200 block">Kéo thả hoặc click chọn file Đề thi (Ảnh hoặc PDF)</span>
+                            <span className="text-[9px] text-indigo-400 block mt-1">Hỗ trợ .png, .jpg, .jpeg, .pdf (Quét bằng Gemini-3.5-Flash)</span>
+                          </label>
+                        )}
+                      </div>
+
+                      {scanError && (
+                        <div className="mt-3 p-2 bg-rose-500/20 border border-rose-500/30 rounded-lg text-[10px] text-rose-300">
+                          Lỗi quét: {scanError}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Main Edit Form */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                      <h3 className="text-xs font-extrabold text-slate-700 uppercase tracking-wide border-b border-slate-100 pb-3 mb-4 flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-indigo-900" />
+                        <span>CẬP NHẬT ĐỀ THI & THỜI GIAN</span>
+                      </h3>
+
+                      <form onSubmit={handleUpdateExam} className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="md:col-span-2 space-y-1">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase">Tiêu đề đề thi</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="Ví dụ: Đề thi thử năng lực tiếng Anh B1 - Kỳ thi tháng 7"
+                              value={examTitle}
+                              onChange={(e) => setExamTitle(e.target.value)}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-semibold"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase">Thời gian làm bài (Phút)</label>
+                            <input
+                              type="number"
+                              required
+                              min={15}
+                              max={180}
+                              value={examDuration}
+                              onChange={(e) => setExamDuration(parseInt(e.target.value) || 60)}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-mono font-bold"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase">Mô tả đề thi</label>
+                          <textarea
+                            placeholder="Mô tả tóm tắt mục tiêu đề thi hoặc đối tượng học sinh hướng tới..."
+                            value={examDesc}
+                            onChange={(e) => setExamDesc(e.target.value)}
+                            rows={2}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 pt-4">
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase">File Nghe Audio 1 (Part 1)</label>
+                            <input
+                              type="text"
+                              placeholder="Nhập link audio hoặc tải file bên dưới..."
+                              value={examAudio1Url}
+                              onChange={(e) => setExamAudio1Url(e.target.value)}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-mono mb-1.5"
+                            />
+                            <label className="inline-flex items-center gap-1 text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded cursor-pointer transition-colors font-bold">
+                              <Download className="w-3 h-3 transform rotate-180" /> Tải lên Audio 1
+                              <input 
+                                type="file" 
+                                accept="audio/*" 
+                                className="hidden" 
+                                onChange={(e) => handleUploadAudio(e, 1)} 
+                              />
+                            </label>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase">File Nghe Audio 2 (Part 2)</label>
+                            <input
+                              type="text"
+                              placeholder="Nhập link audio hoặc tải file bên dưới..."
+                              value={examAudio2Url}
+                              onChange={(e) => setExamAudio2Url(e.target.value)}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-mono mb-1.5"
+                            />
+                            <label className="inline-flex items-center gap-1 text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded cursor-pointer transition-colors font-bold">
+                              <Download className="w-3 h-3 transform rotate-180" /> Tải lên Audio 2
+                              <input 
+                                type="file" 
+                                accept="audio/*" 
+                                className="hidden" 
+                                onChange={(e) => handleUploadAudio(e, 2)} 
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Visual Question Builder */}
+                        <div className="border-t border-slate-100 pt-4">
+                          {renderVisualQuestionBuilder()}
+                        </div>
+
+                        <div className="space-y-1 border-t border-slate-100 pt-4">
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase">Cấu trúc dữ liệu Câu hỏi (JSON Database Schema)</label>
+                            <button
+                              type="button"
+                              onClick={handleLoadJsonTemplate}
+                              className="text-[10px] font-extrabold text-indigo-900 hover:underline inline-flex items-center gap-1"
+                            >
+                              <Sparkles className="w-3 h-3" /> Tải Cấu trúc Mẫu (JSON Template)
+                            </button>
+                          </div>
+                          <textarea
+                            required
+                            placeholder="Dán JSON chứa các câu hỏi phần nghe, đọc, nói, viết, từ vựng và ngữ pháp tại đây..."
+                            value={examQuestionsJson}
+                            onChange={(e) => setExamQuestionsJson(e.target.value)}
+                            rows={12}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-mono"
+                          />
+                        </div>
+
+                        <div className="flex gap-3 pt-3 border-t border-slate-100">
+                          <button
+                            type="submit"
+                            disabled={examLoading}
+                            className="flex-1 bg-indigo-900 hover:bg-indigo-850 disabled:bg-indigo-300 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            {examLoading ? 'Đang xử lý...' : 'LƯU THAY ĐỔI'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </>
+                )}
+              </>
+            ) : (
+              /* NO EXAM SELECTED - DISPLAY EXPLANATION BANNER & MANUAL CREATE FORM */
+              <>
+                <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center space-y-2">
+                  <FileText className="w-10 h-10 text-slate-400 mx-auto" />
+                  <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider">CHƯA CHỌN ĐỀ THI</h4>
+                  <p className="text-[11px] text-slate-500 max-w-md mx-auto leading-relaxed">
+                    Vui lòng nhấn trực tiếp vào một đề thi ở danh sách bên trái để xem danh sách thí sinh làm bài, reset lượt thi dở hoặc chỉnh sửa cấu trúc đề thi.
+                  </p>
+                </div>
+
+                {/* Main Create Form */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <h3 className="text-xs font-extrabold text-slate-700 uppercase tracking-wide border-b border-slate-100 pb-3 mb-4 flex items-center gap-2">
+                    <Plus className="w-4 h-4 text-indigo-900" />
+                    <span>TẠO ĐỀ THI THỦ CÔNG MỚI</span>
+                  </h3>
+
+                  <form onSubmit={handleCreateExam} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="md:col-span-2 space-y-1">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">Tiêu đề đề thi</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ví dụ: Đề thi thử năng lực tiếng Anh B1 - Kỳ thi tháng 7"
+                          value={examTitle}
+                          onChange={(e) => setExamTitle(e.target.value)}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-semibold"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">Thời gian làm bài (Phút)</label>
+                        <input
+                          type="number"
+                          required
+                          min={15}
+                          max={180}
+                          value={examDuration}
+                          onChange={(e) => setExamDuration(parseInt(e.target.value) || 60)}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-mono font-bold"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase">Mô tả đề thi</label>
+                      <textarea
+                        placeholder="Mô tả tóm tắt mục tiêu đề thi hoặc đối tượng học sinh hướng tới..."
+                        value={examDesc}
+                        onChange={(e) => setExamDesc(e.target.value)}
+                        rows={2}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 pt-4">
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">File Nghe Audio 1 (Part 1)</label>
+                        <input
+                          type="text"
+                          placeholder="Nhập link audio hoặc tải file bên dưới..."
+                          value={examAudio1Url}
+                          onChange={(e) => setExamAudio1Url(e.target.value)}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-mono mb-1.5"
+                        />
+                        <label className="inline-flex items-center gap-1 text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded cursor-pointer transition-colors font-bold">
+                          <Download className="w-3 h-3 transform rotate-180" /> Tải lên Audio 1
+                          <input 
+                            type="file" 
+                            accept="audio/*" 
+                            className="hidden" 
+                            onChange={(e) => handleUploadAudio(e, 1)} 
+                          />
+                        </label>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">File Nghe Audio 2 (Part 2)</label>
+                        <input
+                          type="text"
+                          placeholder="Nhập link audio hoặc tải file bên dưới..."
+                          value={examAudio2Url}
+                          onChange={(e) => setExamAudio2Url(e.target.value)}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-mono mb-1.5"
+                        />
+                        <label className="inline-flex items-center gap-1 text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded cursor-pointer transition-colors font-bold">
+                          <Download className="w-3 h-3 transform rotate-180" /> Tải lên Audio 2
+                          <input 
+                            type="file" 
+                            accept="audio/*" 
+                            className="hidden" 
+                            onChange={(e) => handleUploadAudio(e, 2)} 
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Visual Question Builder */}
+                    <div className="border-t border-slate-100 pt-4">
+                      {renderVisualQuestionBuilder()}
+                    </div>
+
+                    <div className="space-y-1 border-t border-slate-100 pt-4">
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">Cấu trúc dữ liệu Câu hỏi (JSON Database Schema)</label>
+                        <button
+                          type="button"
+                          onClick={handleLoadJsonTemplate}
+                          className="text-[10px] font-extrabold text-indigo-900 hover:underline inline-flex items-center gap-1"
+                        >
+                          <Sparkles className="w-3 h-3" /> Tải Cấu trúc Mẫu (JSON Template)
+                        </button>
+                      </div>
+                      <textarea
+                        required
+                        placeholder="Dán JSON chứa các câu hỏi phần nghe, đọc, nói, viết, từ vựng và ngữ pháp tại đây..."
+                        value={examQuestionsJson}
+                        onChange={(e) => setExamQuestionsJson(e.target.value)}
+                        rows={12}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all font-mono"
+                      />
+                    </div>
+
+                    <div className="flex gap-3 pt-3 border-t border-slate-100">
+                      <button
+                        type="submit"
+                        disabled={examLoading}
+                        className="flex-1 bg-indigo-900 hover:bg-indigo-850 disabled:bg-indigo-300 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        {examLoading ? 'Đang xử lý...' : 'LƯU ĐỀ THI'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </>
+            )}
           </div>
 
         </div>
@@ -2355,93 +2910,19 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
         ) : adminTab === 'candidates' ? (
           !viewingDetailId ? (
           <>
-            {/* 1. METRICS ROW */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-              
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center gap-4">
-                <div className="p-3 bg-indigo-50 rounded-lg text-indigo-900 shrink-0">
-                  <Users className="w-6 h-6" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Tổng số thí sinh</p>
-                  <p className="text-2xl font-black text-indigo-950">{stats.total}</p>
-                </div>
-              </div>
-
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center gap-4">
-                <div className="p-3 bg-green-50 rounded-lg text-green-700 shrink-0">
-                  <CheckCircle className="w-6 h-6" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Đã nộp bài (Done)</p>
-                  <p className="text-2xl font-black text-green-700">{stats.completed}</p>
-                </div>
-              </div>
-
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center gap-4">
-                <div className="p-3 bg-amber-50 rounded-lg text-amber-700 shrink-0">
-                  <Clock className="w-6 h-6" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Đang làm bài (Active)</p>
-                  <p className="text-2xl font-black text-amber-600">{stats.active}</p>
-                </div>
-              </div>
-
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center gap-4">
-                <div className="p-3 bg-purple-50 rounded-lg text-purple-700 shrink-0">
-                  <Award className="w-6 h-6" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Điểm trung bình</p>
-                  <p className="text-2xl font-black text-purple-900">{stats.averageScore} <span className="text-xs text-slate-400 font-normal">/ 85</span></p>
-                </div>
-              </div>
-
-            </div>
-
-            {/* 2. STATS SPREAD CHART */}
-            <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide border-b border-slate-100 pb-3 mb-5">
-                Phân bố trình độ ứng viên (Score Bands Distribution)
-              </h3>
-              
-              <div className="grid grid-cols-5 gap-3 h-40 items-end max-w-2xl">
-                {Object.entries(stats.bands as Record<string, number>).map(([band, count]) => {
-                  const maxCount = Math.max(...Object.values(stats.bands as Record<string, number>)) || 1;
-                  const heightPercent = (count / maxCount) * 100;
-
-                  return (
-                    <div key={band} className="flex flex-col items-center h-full justify-end group">
-                      <div className="text-xs font-bold text-slate-600 mb-1 group-hover:text-indigo-900 transition-colors">
-                        {count} thí sinh
-                      </div>
-                      <div
-                        style={{ height: `${heightPercent || 5}%` }}
-                        className="w-full rounded-t-lg bg-indigo-900 hover:bg-indigo-750 transition-all duration-300 shadow-sm"
-                      />
-                      <div className="text-xs font-black text-indigo-950 mt-2 bg-slate-100 border border-slate-200 px-3 py-1 rounded-md">
-                        {band}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="text-slate-400 text-[10px] font-mono mt-4">
-                * Quy đổi IELTS tương đương: A1 (&lt;=30), A2 (31-50), B1 (51-65), B2 (66-78), C1 (79-85)
-              </p>
-            </div>
-
-            {/* 3. CANDIDATES GRID TABLE */}
+            {/* SIMPLIFIED REGISTERED CANDIDATES ROSTER */}
             <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
               
               {/* Header Filters & Searches */}
               <div className="flex flex-col sm:flex-row justify-between items-center pb-5 border-b border-slate-100 gap-4 mb-5">
-                <h3 className="font-bold text-slate-800 uppercase tracking-wide text-sm shrink-0">
-                  Danh sách thí sinh tham gia
-                </h3>
+                <div>
+                  <h3 className="font-bold text-slate-800 uppercase tracking-wide text-sm">
+                    Quản lý học sinh đăng nhập
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-1">Danh sách học sinh đã khởi tạo tài khoản thi trên hệ thống.</p>
+                </div>
 
-                <div className="w-full flex flex-col sm:flex-row items-center gap-3">
+                <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-3">
                   {/* Search box */}
                   <div className="relative w-full sm:max-w-xs">
                     <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
@@ -2452,34 +2933,6 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-900 focus:outline-none"
                     />
-                  </div>
-
-                  {/* Filter tabs */}
-                  <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-250 w-full sm:w-auto shrink-0 select-none">
-                    <button
-                      onClick={() => setFilterType('all')}
-                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
-                        filterType === 'all' ? 'bg-white text-indigo-950 shadow-xs' : 'text-slate-600 hover:text-slate-950'
-                      }`}
-                    >
-                      Tất cả
-                    </button>
-                    <button
-                      onClick={() => setFilterType('completed')}
-                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
-                        filterType === 'completed' ? 'bg-white text-green-750 shadow-xs' : 'text-slate-600 hover:text-slate-950'
-                      }`}
-                    >
-                      Đã nộp bài
-                    </button>
-                    <button
-                      onClick={() => setFilterType('active')}
-                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
-                        filterType === 'active' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-600 hover:text-slate-950'
-                      }`}
-                    >
-                      Đang thi dở
-                    </button>
                   </div>
 
                   {/* Export button */}
@@ -2497,28 +2950,21 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
               <div className="overflow-x-auto select-none">
                 {filteredCandidates.length === 0 ? (
                   <div className="text-center py-12 text-slate-400 text-sm italic">
-                    Chưa có thí sinh nào khớp với điều kiện tìm kiếm.
+                    Chưa có thí sinh nào đăng nhập hoặc khớp với điều kiện tìm kiếm.
                   </div>
                 ) : (
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-150 text-slate-500 font-bold uppercase tracking-wider">
-                        <th className="py-3 px-4">Thí sinh</th>
+                        <th className="py-3 px-4">Học sinh</th>
                         <th className="py-3 px-4">Số điện thoại</th>
-                        <th className="py-3 px-4">Thời gian thi</th>
-                        <th className="py-3 px-4 text-center">Tab Switches</th>
-                        <th className="py-3 px-4 text-center">Điểm Listening</th>
-                        <th className="py-3 px-4 text-center">Điểm Grammar</th>
-                        <th className="py-3 px-4 text-center">Điểm Vocab</th>
-                        <th className="py-3 px-4 text-center">Điểm Reading</th>
-                        <th className="py-3 px-4 text-center">Điểm Writing</th>
-                        <th className="py-3 px-4 text-center">Tổng điểm</th>
-                        <th className="py-3 px-4 text-right">Chi tiết</th>
+                        <th className="py-3 px-4">Thời gian đăng ký</th>
+                        <th className="py-3 px-4 text-center">Trạng thái khóa</th>
+                        <th className="py-3 px-4 text-right">Hành động</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
                       {filteredCandidates.map((c) => {
-                        const isCompleted = c.submittedAt !== null;
                         return (
                           <tr key={c.id} className="hover:bg-slate-50/50 transition-colors">
                             <td className="py-4 px-4">
@@ -2526,66 +2972,45 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
                               <span className="text-[10px] text-slate-400 font-mono tracking-wide">ID: {c.id}</span>
                             </td>
                             <td className="py-4 px-4 font-mono font-bold text-indigo-950">{c.phone}</td>
-                            <td className="py-4 px-4 leading-normal">
-                              <div>Đăng ký: {new Date(c.registeredAt).toLocaleTimeString('vi-VN')} {new Date(c.registeredAt).toLocaleDateString('vi-VN')}</div>
-                              {isCompleted ? (
-                                <div className="text-slate-400 text-[10px] mt-0.5">
-                                  Thời gian làm bài: <strong className="text-slate-600">{formatDuration(c.durationSeconds)}</strong>
-                                </div>
-                              ) : (
-                                <span className="inline-block px-2 py-0.5 mt-1 bg-amber-50 border border-amber-200 text-amber-700 rounded text-[10px] font-bold uppercase animate-pulse">Đang làm dở...</span>
-                              )}
+                            <td className="py-4 px-4">
+                              {new Date(c.registeredAt).toLocaleTimeString('vi-VN')} {new Date(c.registeredAt).toLocaleDateString('vi-VN')}
                             </td>
-                            <td className="py-4 px-4 text-center font-bold">
-                              {countTabSwitches(c) > 0 ? (
-                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black bg-rose-500 text-white border border-rose-600 shadow-xs animate-pulse">
-                                  <ShieldAlert className="w-3.5 h-3.5" /> GIÁN LẬN ({countTabSwitches(c)} lần)
-                                </span>
-                              ) : (
-                                <span className="px-2 py-1 rounded font-mono text-slate-400 text-xs">
-                                  Không có
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-4 px-4 text-center font-mono font-bold text-slate-800">{isCompleted ? `${c.scores?.listening}/17` : '-'}</td>
-                            <td className="py-4 px-4 text-center font-mono font-bold text-slate-800">{isCompleted ? `${c.scores?.grammar}/30` : '-'}</td>
-                            <td className="py-4 px-4 text-center font-mono font-bold text-slate-800">{isCompleted ? `${c.scores?.vocabulary}/22` : '-'}</td>
-                            <td className="py-4 px-4 text-center font-mono font-bold text-slate-800">{isCompleted ? `${c.scores?.reading}/6` : '-'}</td>
-                            <td className="py-4 px-4 text-center font-mono font-bold text-purple-900 bg-purple-50/20">{isCompleted ? `${c.writingScore}/10` : '-'}</td>
                             <td className="py-4 px-4 text-center">
-                              {isCompleted ? (
-                                <div className="space-y-0.5">
-                                  <strong className="text-indigo-950 text-sm font-black font-mono bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md inline-block">{c.scores?.total}</strong>
-                                  <span className="text-[10px] block text-green-700 font-extrabold">({c.scores?.percentage}%)</span>
-                                </div>
+                              {c.isLocked ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                  <Lock className="w-3 h-3 text-rose-700" /> ĐÃ KHÓA
+                                </span>
                               ) : (
-                                '-'
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-150">
+                                  <Unlock className="w-3 h-3 text-emerald-600" /> HOẠT ĐỘNG
+                                </span>
                               )}
                             </td>
-                             <td className="py-4 px-4 text-right">
-                               <div className="flex justify-end items-center gap-1.5">
-                                 <button
-                                   onClick={() => handleViewDetail(c.id)}
-                                   className="bg-white hover:bg-indigo-50 text-indigo-900 border border-indigo-900 font-bold py-1.5 px-2.5 rounded-lg hover:shadow-xs transition-colors cursor-pointer text-[11px]"
-                                 >
-                                   Chi tiết
-                                 </button>
-                                 <button
-                                   onClick={() => handleResetCandidate(c.id, c.fullName)}
-                                   title="Reset lượt làm bài"
-                                   className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg hover:shadow-xs transition-colors cursor-pointer"
-                                 >
-                                   <RotateCcw className="w-3.5 h-3.5" />
-                                 </button>
-                                 <button
-                                   onClick={() => handleDeleteCandidate(c.id, c.fullName)}
-                                   title="Xóa vĩnh viễn thí sinh"
-                                   className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg hover:shadow-xs transition-colors cursor-pointer"
-                                 >
-                                   <Trash2 className="w-3.5 h-3.5" />
-                                 </button>
-                               </div>
-                             </td>
+                            <td className="py-4 px-4 text-right">
+                              <div className="flex justify-end items-center gap-2">
+                                <button
+                                  onClick={() => handleToggleLockPhone(c.phone, !!c.isLocked)}
+                                  disabled={lockLoadingPhone === c.phone}
+                                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                                    c.isLocked 
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-250 hover:bg-emerald-100' 
+                                      : 'bg-amber-50 text-amber-700 border-amber-250 hover:bg-amber-100'
+                                  }`}
+                                  title={c.isLocked ? "Mở khóa thí sinh" : "Khóa thí sinh"}
+                                >
+                                  {c.isLocked ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                                  {c.isLocked ? "Mở khóa" : "Khóa"}
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteCandidate(c.id, c.fullName)}
+                                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg hover:shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 font-bold"
+                                  title="Xóa vĩnh viễn học sinh này"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Xóa
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                         );
                       })}
