@@ -25,12 +25,12 @@ export const aiScanService = {
     base64Data: string,
     mimeType: string
   ): Promise<ScannedExamResult> {
-    // 1. Fetch GEMINI_API_KEY from Settings
+    // 1. Fetch GEMINI_API_KEY from Settings or Environment Variable
     const settings = await settingsService.getSettings();
-    const apiKey = settings.geminiApiKey || '';
+    const apiKey = settings.geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
     
     if (!apiKey) {
-      throw new Error('Chưa cấu hình GEMINI_API_KEY trong hệ thống. Giáo viên vui lòng vào Settings > Cấu hình hệ thống để lưu API Key.');
+      throw new Error('Chưa cấu hình GEMINI_API_KEY trong hệ thống. Giáo viên vui lòng cấu hình trong Settings > Cài đặt hệ thống, hoặc cài đặt biến môi trường VITE_GEMINI_API_KEY trên Vercel.');
     }
 
     const ai = new GoogleGenAI({

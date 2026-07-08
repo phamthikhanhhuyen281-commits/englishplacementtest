@@ -20,10 +20,10 @@ export const speakingService = {
     referenceText: string
   ): Promise<SpeakingEvaluationResult> {
     const settings = await settingsService.getSettings();
-    const apiKey = settings.geminiApiKey || '';
+    const apiKey = settings.geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
 
     if (!apiKey) {
-      console.warn('GEMINI_API_KEY is not configured client-side. Falling back to simulated evaluation.');
+      console.warn('GEMINI_API_KEY is not configured client-side or in env. Falling back to simulated evaluation.');
       return this.getSimulatedFallback();
     }
 
