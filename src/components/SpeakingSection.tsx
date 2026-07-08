@@ -3,6 +3,7 @@ import { Mic, Square, Check, RefreshCw, AlertCircle, Play, Sparkles, Volume2 } f
 import { SPEAKING_READ_ALOUD, SPEAKING_QUESTIONS } from '../questions';
 import { candidateService } from '../services/candidateService';
 import { storageService } from '../services/storageService';
+import { speakingService } from '../services/speakingService';
 
 interface SpeakingSectionProps {
   candidateId: string;
@@ -112,13 +113,18 @@ export default function SpeakingSection({
 
             // If speaking_p1 (Read Aloud), trigger Gemini AI Pronunciation scoring automatically!
             if (id === 'speaking_p1') {
-              fetch('/api/speaking/evaluate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: candidateId, audioPath: downloadUrl })
-              }).then(() => {
-                onRefreshSession(); // update state in parent
-              }).catch(err => console.error('Gemini background evaluate failed:', err));
+              speakingService.evaluateSpeakingAudio(downloadUrl, speakingReadAloud.text)
+                .then(async (evaluation) => {
+                  const answersUpdateWithEvaluation = {
+                    speakingPart1: {
+                      audioPath: downloadUrl,
+                      aiEvaluation: evaluation
+                    }
+                  };
+                  await candidateService.updateAnswers(candidateId, answersUpdateWithEvaluation);
+                  onRefreshSession(); // update state in parent
+                })
+                .catch(err => console.error('Gemini background evaluate failed:', err));
             }
 
             setRecordingState(prev => ({ ...prev, [id]: 'done' }));

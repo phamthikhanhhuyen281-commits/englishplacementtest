@@ -88,15 +88,7 @@ export const authService = {
       const snap = await getDoc(adminDocRef);
 
       if (!snap.exists()) {
-        // Create initial config if not exists
-        await setDoc(adminDocRef, {
-          adminPasswordHash: DEFAULT_PASS_HASH,
-          createdAt: new Date().toISOString()
-        });
-        if (hashed === DEFAULT_PASS_HASH) {
-          localStorage.setItem('admin_token', 'true');
-          return { success: true };
-        }
+        return { success: false, error: 'Chưa cấu hình tài khoản Admin. Vui lòng tạo tài khoản trước.' };
       } else {
         const data = snap.data();
         if (hashed === data.adminPasswordHash) {
@@ -104,9 +96,36 @@ export const authService = {
           return { success: true };
         }
       }
-      return { success: false, error: 'Incorrect password.' };
+      return { success: false, error: 'Mật khẩu quản trị viên không chính xác.' };
     } catch (err: any) {
       console.error('Login error:', err);
+      return { success: false, error: err.message };
+    }
+  },
+
+  async isConfigured(): Promise<boolean> {
+    try {
+      const adminDocRef = doc(db, 'admins', 'config');
+      const snap = await getDoc(adminDocRef);
+      return snap.exists() && !!snap.data()?.adminPasswordHash;
+    } catch (err) {
+      console.error('isConfigured check error:', err);
+      return false;
+    }
+  },
+
+  async registerAdmin(password: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const hashed = sha256(password);
+      const adminDocRef = doc(db, 'admins', 'config');
+      await setDoc(adminDocRef, {
+        adminPasswordHash: hashed,
+        createdAt: new Date().toISOString()
+      });
+      localStorage.setItem('admin_token', 'true');
+      return { success: true };
+    } catch (err: any) {
+      console.error('registerAdmin error:', err);
       return { success: false, error: err.message };
     }
   },
@@ -119,12 +138,22 @@ export const authService = {
     return localStorage.getItem('admin_token') === 'true';
   },
 
-  async updateAdminPassword(newPassword: string): Promise<{ success: boolean; error?: string }> {
+  async updateAdminPassword(oldPassword: string, newPassword: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const hashed = sha256(newPassword);
       const adminDocRef = doc(db, 'admins', 'config');
+      const snap = await getDoc(adminDocRef);
+      if (!snap.exists()) {
+        return { success: false, error: 'Tài khoản chưa được khởi tạo.' };
+      }
+      
+      const currentHash = snap.data().adminPasswordHash;
+      if (sha256(oldPassword) !== currentHash) {
+        return { success: false, error: 'Mật khẩu hiện tại không chính xác.' };
+      }
+
+      const newHashed = sha256(newPassword);
       await updateDoc(adminDocRef, {
-        adminPasswordHash: hashed,
+        adminPasswordHash: newHashed,
         updatedAt: new Date().toISOString()
       });
       return { success: true };

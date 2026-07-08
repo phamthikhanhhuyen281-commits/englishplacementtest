@@ -14,6 +14,7 @@ import {
   Volume2,
   Trash2,
   Lock,
+  Unlock,
   Search,
   Filter,
   Check,
@@ -27,7 +28,12 @@ import {
   Plus,
   ExternalLink,
   Video,
-  Settings
+  Settings,
+  BarChart2,
+  Activity,
+  Globe,
+  Share2,
+  Eye
 } from 'lucide-react';
 import { WRITING_QUESTIONS, LISTENING_PART_1, LISTENING_PART_2, GRAMMAR_QUESTIONS, VOCABULARY_QUESTIONS, READING_PASSAGE } from '../questions';
 
@@ -39,6 +45,8 @@ import { materialService } from '../services/materialService';
 import { settingsService } from '../services/settingsService';
 import { storageService } from '../services/storageService';
 import { aiScanService } from '../services/aiScanService';
+import { languageService, Language } from '../services/languageService';
+import LanguageToggle from './LanguageToggle';
 
 interface CandidateSummary {
   id: string;
@@ -139,6 +147,15 @@ function countTabSwitches(candidate: any): number {
 }
 
 export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
+  const [lang, setLang] = useState<Language>(languageService.getLanguage());
+  const t = (key: Parameters<typeof languageService.t>[0]) => languageService.t(key);
+
+  useEffect(() => {
+    return languageService.onChange((newLang) => {
+      setLang(newLang);
+    });
+  }, []);
+
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -167,7 +184,7 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
   const [activeAuditTab, setActiveAuditTab] = useState<'listening' | 'grammar' | 'vocabulary' | 'reading'>('listening');
 
   // Materials state
-  const [adminTab, setAdminTab] = useState<'candidates' | 'materials' | 'exams' | 'settings'>('candidates');
+  const [adminTab, setAdminTab] = useState<'overview' | 'exams' | 'candidates' | 'materials' | 'settings' | 'logs'>('overview');
   const [materials, setMaterials] = useState<any[]>([]);
   const [newMaterialTitle, setNewMaterialTitle] = useState('');
   const [newMaterialDesc, setNewMaterialDesc] = useState('');
@@ -185,6 +202,16 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
   const [teacherFacebook, setTeacherFacebook] = useState('');
   const [teacherWebsite, setTeacherWebsite] = useState('');
   const [teacherAddress, setTeacherAddress] = useState('');
+  const [websiteName, setWebsiteName] = useState('English Placement');
+  const [primaryColor, setPrimaryColor] = useState('#1e3a8a');
+  const [secondaryColor, setSecondaryColor] = useState('#3b82f6');
+  const [favicon, setFavicon] = useState('');
+  const [cefrA1Max, setCefrA1Max] = useState<number>(19);
+  const [cefrA2Max, setCefrA2Max] = useState<number>(39);
+  const [cefrB1Max, setCefrB1Max] = useState<number>(59);
+  const [cefrB2Max, setCefrB2Max] = useState<number>(74);
+  const [cefrC1Max, setCefrC1Max] = useState<number>(89);
+  const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordChangeLoading, setPasswordChangeLoading] = useState(false);
@@ -447,7 +474,7 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
           
           fetchExams();
           
-          const s = await settingsService.getSettings();
+           const s = await settingsService.getSettings();
           setLogoUrl(s.logoUrl || '');
           setThemeColor(s.themeColor || 'indigo');
           setSlogan(s.slogan || '');
@@ -459,6 +486,18 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
           setTeacherFacebook(s.teacherFacebook || '');
           setTeacherWebsite(s.teacherWebsite || '');
           setTeacherAddress(s.teacherAddress || '');
+          setWebsiteName(s.websiteName || 'English Placement');
+          setPrimaryColor(s.primaryColor || '#1e3a8a');
+          setSecondaryColor(s.secondaryColor || '#3b82f6');
+          setFavicon(s.favicon || '');
+          if (s.cefrThresholds) {
+            setCefrA1Max(s.cefrThresholds.a1Max);
+            setCefrA2Max(s.cefrThresholds.a2Max);
+            setCefrB1Max(s.cefrThresholds.b1Max);
+            setCefrB2Max(s.cefrThresholds.b2Max);
+            setCefrC1Max(s.cefrThresholds.c1Max);
+          }
+          calculateDashboardStats(cands, s.cefrThresholds);
         } catch (err) {
           console.error('Error loading initial admin data:', err);
         }
@@ -467,7 +506,7 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     }
   }, []);
 
-  const calculateDashboardStats = (cands: any[]) => {
+  const calculateDashboardStats = (cands: any[], customThresholds?: any) => {
     const total = cands.length;
     const completed = cands.filter(c => c.submittedAt !== null).length;
     const active = total - completed;
@@ -476,8 +515,14 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     let totalPercentage = 0;
     let completedCount = 0;
     
-    const bands = { A1: 0, A2: 0, B1: 0, B2: 0, C1: 0 };
+    const bands = { A1: 0, A2: 0, B1: 0, B2: 0, C1: 0, C2: 0 };
     
+    const a1Max = customThresholds ? customThresholds.a1Max : cefrA1Max;
+    const a2Max = customThresholds ? customThresholds.a2Max : cefrA2Max;
+    const b1Max = customThresholds ? customThresholds.b1Max : cefrB1Max;
+    const b2Max = customThresholds ? customThresholds.b2Max : cefrB2Max;
+    const c1Max = customThresholds ? customThresholds.c1Max : cefrC1Max;
+
     cands.forEach(c => {
       if (c.submittedAt !== null && c.scores) {
         completedCount++;
@@ -485,11 +530,12 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
         totalPercentage += c.scores.percentage || 0;
         
         const pct = c.scores.percentage || 0;
-        if (pct < 30) bands.A1++;
-        else if (pct < 50) bands.A2++;
-        else if (pct < 70) bands.B1++;
-        else if (pct < 85) bands.B2++;
-        else bands.C1++;
+        if (pct <= a1Max) bands.A1++;
+        else if (pct <= a2Max) bands.A2++;
+        else if (pct <= b1Max) bands.B1++;
+        else if (pct <= b2Max) bands.B2++;
+        else if (pct <= c1Max) bands.C1++;
+        else bands.C2++;
       }
     });
     
@@ -538,6 +584,18 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
       setTeacherFacebook(s.teacherFacebook || '');
       setTeacherWebsite(s.teacherWebsite || '');
       setTeacherAddress(s.teacherAddress || '');
+      setWebsiteName(s.websiteName || 'English Placement');
+      setPrimaryColor(s.primaryColor || '#1e3a8a');
+      setSecondaryColor(s.secondaryColor || '#3b82f6');
+      setFavicon(s.favicon || '');
+      if (s.cefrThresholds) {
+        setCefrA1Max(s.cefrThresholds.a1Max);
+        setCefrA2Max(s.cefrThresholds.a2Max);
+        setCefrB1Max(s.cefrThresholds.b1Max);
+        setCefrB2Max(s.cefrThresholds.b2Max);
+        setCefrC1Max(s.cefrThresholds.c1Max);
+      }
+      calculateDashboardStats(cands, s.cefrThresholds);
     } catch (err: any) {
       setLoginError(err.message || 'Đăng nhập thất bại.');
     }
@@ -1123,7 +1181,7 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     e.preventDefault();
     setSettingsLoading(true);
     try {
-      await settingsService.updateSettings({
+      const updatedSettings = {
         logoUrl,
         themeColor,
         slogan,
@@ -1134,8 +1192,24 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
         teacherZalo,
         teacherFacebook,
         teacherWebsite,
-        teacherAddress
-      });
+        teacherAddress,
+        websiteName,
+        primaryColor,
+        secondaryColor,
+        favicon,
+        cefrThresholds: {
+          a1Max: cefrA1Max,
+          a2Max: cefrA2Max,
+          b1Max: cefrB1Max,
+          b2Max: cefrB2Max,
+          c1Max: cefrC1Max
+        }
+      };
+      await settingsService.updateSettings(updatedSettings);
+      
+      // Recalculate stats with the newly saved thresholds
+      calculateDashboardStats(candidates, updatedSettings.cefrThresholds);
+      
       showAlert('Thành công', 'Đã cập nhật cấu hình hệ thống thành công!', 'success');
     } catch (err: any) {
       showAlert('Thất bại', err.message || 'Lỗi lưu cấu hình.', 'error');
@@ -1146,6 +1220,10 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!oldPassword.trim()) {
+      showAlert('Lỗi', 'Vui lòng nhập mật khẩu hiện tại.', 'error');
+      return;
+    }
     if (!newPassword.trim()) {
       showAlert('Lỗi', 'Vui lòng nhập mật khẩu mới.', 'error');
       return;
@@ -1156,8 +1234,12 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     }
     setPasswordChangeLoading(true);
     try {
-      await authService.updateAdminPassword(newPassword.trim());
+      const res = await authService.updateAdminPassword(oldPassword.trim(), newPassword.trim());
+      if (!res.success) {
+        throw new Error(res.error || 'Lỗi thay đổi mật khẩu.');
+      }
       showAlert('Thành công', 'Đã thay đổi mật khẩu quản trị viên thành công!', 'success');
+      setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (err: any) {
@@ -1165,6 +1247,273 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
     } finally {
       setPasswordChangeLoading(false);
     }
+  };
+
+  const renderOverviewTab = () => {
+    // 1. Calculate Daily Registrations for last 7 days
+    const dailyStats: { [key: string]: number } = {};
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      return d.toISOString().split('T')[0];
+    }).reverse();
+
+    last7Days.forEach(day => {
+      dailyStats[day] = 0;
+    });
+
+    candidates.forEach(c => {
+      if (c.registeredAt) {
+        const day = c.registeredAt.split('T')[0];
+        if (dailyStats[day] !== undefined) {
+          dailyStats[day]++;
+        }
+      }
+    });
+
+    // 2. Average Duration
+    const completedCandidates = candidates.filter(c => c.submittedAt);
+    const totalSecs = completedCandidates.reduce((acc, c) => acc + (c.durationSeconds || 0), 0);
+    const avgMinutes = completedCandidates.length > 0 ? Math.round(totalSecs / completedCandidates.length / 60) : 0;
+
+    // Max count for chart scaling
+    const maxDailyCount = Math.max(...Object.values(dailyStats), 1);
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-xl font-extrabold text-indigo-950 uppercase tracking-tight">Tổng quan hệ thống</h2>
+          <p className="text-xs text-slate-500">Thống kê dữ liệu, lượt thi, trình độ năng lực và hoạt động của thí sinh.</p>
+        </div>
+
+        {/* Metrics Overview Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center gap-4">
+            <div className="p-3 bg-indigo-50 rounded-lg text-indigo-900 shrink-0">
+              <Users className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Tổng số học sinh</p>
+              <p className="text-2xl font-black text-indigo-950">{stats.total}</p>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center gap-4">
+            <div className="p-3 bg-amber-50 rounded-lg text-amber-700 shrink-0">
+              <Clock className="w-6 h-6 text-amber-600 animate-pulse" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Lượt đang làm bài</p>
+              <p className="text-2xl font-black text-amber-600">{stats.active}</p>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center gap-4">
+            <div className="p-3 bg-green-50 rounded-lg text-green-700 shrink-0">
+              <CheckCircle className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Lượt đã hoàn thành</p>
+              <p className="text-2xl font-black text-green-700">{stats.completed}</p>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center gap-4">
+            <div className="p-3 bg-rose-50 rounded-lg text-rose-700 shrink-0">
+              <Activity className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">T/g làm bài trung bình</p>
+              <p className="text-2xl font-black text-rose-950">{avgMinutes} phút</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Daily Candidate Statistics Chart */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs lg:col-span-2 flex flex-col justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide mb-1 flex items-center gap-2">
+                <BarChart2 className="w-4 h-4 text-indigo-900" /> Thống kê học sinh thi theo ngày
+              </h3>
+              <p className="text-xs text-slate-400 mb-4">Số lượng đăng ký thi trong 7 ngày gần nhất.</p>
+            </div>
+
+            {/* Pure CSS/Tailwind Chart */}
+            <div className="flex items-end gap-3 h-56 pt-4 border-b border-l border-slate-100 px-2">
+              {last7Days.map(day => {
+                const count = dailyStats[day] || 0;
+                const heightPct = Math.min((count / maxDailyCount) * 100, 100);
+                // Format day as DD/MM
+                const parts = day.split('-');
+                const formattedDate = `${parts[2]}/${parts[1]}`;
+                return (
+                  <div key={day} className="flex-1 flex flex-col items-center gap-2 group h-full justify-end">
+                    <span className="text-[10px] font-bold text-indigo-900 opacity-0 group-hover:opacity-100 transition-opacity bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                      {count}
+                    </span>
+                    <div
+                      style={{ height: `${Math.max(heightPct, 4)}%` }}
+                      className="w-full bg-gradient-to-t from-indigo-900 to-indigo-600 rounded-t-lg transition-all duration-500 hover:from-amber-500 hover:to-amber-400 cursor-pointer shadow-xs relative"
+                    >
+                      {count > 0 && (
+                        <div className="absolute inset-x-0 top-1 text-[9px] font-black text-white text-center sm:block hidden">
+                          {count}
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono mt-1 shrink-0">
+                      {formattedDate}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* CEFR Level distribution */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide mb-1 flex items-center gap-2">
+              <Award className="w-4 h-4 text-amber-500" /> Phân phối trình độ CEFR
+            </h3>
+            <p className="text-xs text-slate-400 mb-4">Xếp loại năng lực dựa trên điểm thi và ngưỡng cấu hình.</p>
+
+            <div className="space-y-3.5">
+              {[
+                { label: 'A1', count: stats.bands.A1, range: `0% - ${cefrA1Max}%`, color: 'bg-slate-400' },
+                { label: 'A2', count: stats.bands.A2, range: `${cefrA1Max + 1}% - ${cefrA2Max}%`, color: 'bg-emerald-500' },
+                { label: 'B1', count: stats.bands.B1, range: `${cefrA2Max + 1}% - ${cefrB1Max}%`, color: 'bg-blue-500' },
+                { label: 'B2', count: stats.bands.B2, range: `${cefrB1Max + 1}% - ${cefrB2Max}%`, color: 'bg-indigo-600' },
+                { label: 'C1', count: stats.bands.C1, range: `${cefrB2Max + 1}% - ${cefrC1Max}%`, color: 'bg-violet-600' },
+                { label: 'C2', count: stats.bands.C2 || 0, range: `${cefrC1Max + 1}% - 100%`, color: 'bg-amber-500' },
+              ].map(level => {
+                const bands = (stats.bands || {}) as Record<string, number>;
+                const totalGraded = Object.values(bands).reduce((a, b) => a + b, 0);
+                const pct = totalGraded > 0 ? Math.round(((level.count || 0) / totalGraded) * 100) : 0;
+                return (
+                  <div key={level.label} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2.5 h-2.5 rounded-full ${level.color}`} />
+                        <span className="font-extrabold text-slate-800 text-sm">{level.label}</span>
+                        <span className="text-[10px] text-slate-400">({level.range})</span>
+                      </div>
+                      <div className="font-bold text-slate-700">
+                        {level.count} hs <span className="text-[10px] text-slate-400 font-mono">({pct}%)</span>
+                      </div>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-2">
+                      <div
+                        style={{ width: `${pct}%` }}
+                        className={`h-full rounded-full ${level.color} transition-all duration-500`}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderLogsTab = () => {
+    // Collect and flatten logs from all candidates
+    const allLogs: Array<{
+      timestamp: string;
+      candidateName: string;
+      candidatePhone: string;
+      action: string;
+      details: string;
+    }> = [];
+
+    candidates.forEach(c => {
+      if (c.logs && Array.isArray(c.logs)) {
+        c.logs.forEach((log: any) => {
+          allLogs.push({
+            timestamp: log.timestamp || c.registeredAt || new Date().toISOString(),
+            candidateName: c.fullName || 'Thí sinh',
+            candidatePhone: c.phone || '',
+            action: log.action || 'Thao tác',
+            details: log.details || ''
+          });
+        });
+      }
+    });
+
+    // Sort descending by timestamp
+    allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-xl font-extrabold text-indigo-950 uppercase tracking-tight">Nhật ký hoạt động</h2>
+          <p className="text-xs text-slate-500">Ghi nhận chi tiết tất cả hành động chuyển tab, nộp bài, rời phòng thi của thí sinh theo thời gian thực.</p>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+          <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+            <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Lịch sử sự kiện ({allLogs.length})</h3>
+          </div>
+
+          <div className="overflow-x-auto">
+            {allLogs.length === 0 ? (
+              <div className="p-12 text-center text-slate-400 text-xs">
+                Chưa ghi nhận hoạt động nào từ hệ thống.
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 border-b border-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-wider font-mono">
+                    <th className="py-3 px-4">Thời gian</th>
+                    <th className="py-3 px-4">Thí sinh</th>
+                    <th className="py-3 px-4">Sự kiện</th>
+                    <th className="py-3 px-4">Chi tiết</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                  {allLogs.slice(0, 100).map((log, idx) => {
+                    const timeStr = new Date(log.timestamp).toLocaleString('vi-VN');
+                    let badgeColor = 'bg-slate-100 text-slate-700';
+                    if (log.action.toLowerCase().includes('cheat') || log.action.toLowerCase().includes('switch') || log.action.toLowerCase().includes('exit')) {
+                      badgeColor = 'bg-rose-100 text-rose-700 border border-rose-200 font-extrabold';
+                    } else if (log.action.toLowerCase().includes('submit') || log.action.toLowerCase().includes('finish')) {
+                      badgeColor = 'bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold';
+                    } else if (log.action.toLowerCase().includes('start')) {
+                      badgeColor = 'bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold';
+                    }
+
+                    return (
+                      <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-3 px-4 font-mono text-slate-500 whitespace-nowrap">{timeStr}</td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{log.candidateName}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">{log.candidatePhone}</div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] uppercase font-bold tracking-wide select-none ${badgeColor}`}>
+                            {log.action}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-600 font-medium max-w-xs truncate" title={log.details}>
+                          {log.details}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+          {allLogs.length > 100 && (
+            <div className="p-3 bg-slate-50 border-t border-slate-200 text-center text-[10px] text-slate-400 italic">
+              Hiển thị tối đa 100 nhật ký hoạt động gần nhất.
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   const renderSettingsManager = () => {
@@ -1179,29 +1528,90 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
           {/* System Config Card */}
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide border-b border-slate-100 pb-3 flex items-center gap-2">
-              <Settings className="w-4 h-4 text-indigo-900" /> Cấu hình chung
+              <Settings className="w-4 h-4 text-indigo-900" /> Cấu hình thương hiệu & Liên hệ
             </h3>
             <form onSubmit={handleSaveSettings} className="space-y-4">
-              <div className="space-y-1">
-                <label className="block text-[11px] font-bold text-slate-700 uppercase">Logo URL</label>
-                <input
-                  type="text"
-                  placeholder="https://example.com/logo.png"
-                  value={logoUrl}
-                  onChange={(e) => setLogoUrl(e.target.value)}
-                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">Tên website</label>
+                  <input
+                    type="text"
+                    placeholder="English Placement"
+                    value={websiteName}
+                    onChange={(e) => setWebsiteName(e.target.value)}
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">Khẩu hiệu (Slogan)</label>
+                  <input
+                    type="text"
+                    placeholder="Your English Journey Starts Here."
+                    value={slogan}
+                    onChange={(e) => setSlogan(e.target.value)}
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="block text-[11px] font-bold text-slate-700 uppercase">Khẩu hiệu (Slogan)</label>
-                <input
-                  type="text"
-                  placeholder="Your English Journey Starts Here."
-                  value={slogan}
-                  onChange={(e) => setSlogan(e.target.value)}
-                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">Logo URL</label>
+                  <input
+                    type="text"
+                    placeholder="https://example.com/logo.png"
+                    value={logoUrl}
+                    onChange={(e) => setLogoUrl(e.target.value)}
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">Favicon URL</label>
+                  <input
+                    type="text"
+                    placeholder="https://example.com/favicon.ico"
+                    value={favicon}
+                    onChange={(e) => setFavicon(e.target.value)}
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">Màu chính (Primary Color)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="color"
+                      value={primaryColor}
+                      onChange={(e) => setPrimaryColor(e.target.value)}
+                      className="w-10 h-8 p-0 border border-slate-200 rounded-lg cursor-pointer shrink-0"
+                    />
+                    <input
+                      type="text"
+                      value={primaryColor}
+                      onChange={(e) => setPrimaryColor(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-200 rounded-xl focus:outline-none text-xs font-mono"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">Màu phụ (Secondary Color)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="color"
+                      value={secondaryColor}
+                      onChange={(e) => setSecondaryColor(e.target.value)}
+                      className="w-10 h-8 p-0 border border-slate-200 rounded-lg cursor-pointer shrink-0"
+                    />
+                    <input
+                      type="text"
+                      value={secondaryColor}
+                      onChange={(e) => setSecondaryColor(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-200 rounded-xl focus:outline-none text-xs font-mono"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1285,22 +1695,6 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
               </div>
 
               <div className="space-y-1">
-                <label className="block text-[11px] font-bold text-slate-700 uppercase">Màu chủ đề (Theme Color)</label>
-                <select
-                  value={themeColor}
-                  onChange={(e) => setThemeColor(e.target.value)}
-                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-900 text-xs transition-all"
-                >
-                  <option value="indigo">Indigo (Xanh chàm)</option>
-                  <option value="emerald">Emerald (Xanh lục bảo)</option>
-                  <option value="blue">Blue (Xanh dương)</option>
-                  <option value="violet">Violet (Tím)</option>
-                  <option value="rose">Rose (Hồng hoa hồng)</option>
-                  <option value="slate">Slate (Xám đá)</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
                 <label className="block text-[11px] font-bold text-slate-700 uppercase flex items-center gap-1.5">
                   GEMINI_API_KEY <span className="text-[9px] text-indigo-700 font-bold lowercase">(Mã quét đề AI)</span>
                 </label>
@@ -1323,44 +1717,147 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
             </form>
           </div>
 
-          {/* Change Password Card */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide border-b border-slate-100 pb-3 flex items-center gap-2">
-              <Lock className="w-4 h-4 text-rose-600" /> Đổi mật khẩu Admin
-            </h3>
-            <form onSubmit={handleChangePassword} className="space-y-4">
-              <div className="space-y-1">
-                <label className="block text-[11px] font-bold text-slate-700 uppercase">Mật khẩu mới</label>
-                <input
-                  type="password"
-                  required
-                  placeholder="Nhập mật khẩu mới"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs transition-all"
-                />
-              </div>
+          <div className="space-y-6">
+            {/* CEFR Range Slider Card */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide border-b border-slate-100 pb-3 flex items-center gap-2">
+                <Award className="w-4 h-4 text-amber-500" /> Ngưỡng phân loại trình độ CEFR
+              </h3>
+              <p className="text-xs text-slate-500">Điều chỉnh mức điểm tối đa (percentage) để AI tự động xếp loại năng lực học sinh.</p>
+              
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-bold text-slate-700">
+                    <span>Ngưỡng A1 (Tối đa)</span>
+                    <span className="text-indigo-900">{cefrA1Max}% (Khoảng: 0% - {cefrA1Max}%)</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    value={cefrA1Max}
+                    onChange={(e) => setCefrA1Max(Number(e.target.value))}
+                    className="w-full accent-indigo-900 h-1.5 bg-slate-100 rounded-lg cursor-pointer"
+                  />
+                </div>
 
-              <div className="space-y-1">
-                <label className="block text-[11px] font-bold text-slate-700 uppercase">Xác nhận mật khẩu</label>
-                <input
-                  type="password"
-                  required
-                  placeholder="Xác nhận mật khẩu mới"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs transition-all"
-                />
-              </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-bold text-slate-700">
+                    <span>Ngưỡng A2 (Tối đa)</span>
+                    <span className="text-indigo-900">{cefrA2Max}% (Khoảng: {cefrA1Max + 1}% - {cefrA2Max}%)</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={cefrA1Max + 1}
+                    max="100"
+                    value={cefrA2Max}
+                    onChange={(e) => setCefrA2Max(Number(e.target.value))}
+                    className="w-full accent-indigo-900 h-1.5 bg-slate-100 rounded-lg cursor-pointer"
+                  />
+                </div>
 
-              <button
-                type="submit"
-                disabled={passwordChangeLoading}
-                className="bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white font-bold py-2.5 px-5 rounded-xl text-xs shadow-md transition-colors cursor-pointer mt-2 w-full"
-              >
-                {passwordChangeLoading ? 'Đang cập nhật...' : 'Cập nhật mật khẩu'}
-              </button>
-            </form>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-bold text-slate-700">
+                    <span>Ngưỡng B1 (Tối đa)</span>
+                    <span className="text-indigo-900">{cefrB1Max}% (Khoảng: {cefrA2Max + 1}% - {cefrB1Max}%)</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={cefrA2Max + 1}
+                    max="100"
+                    value={cefrB1Max}
+                    onChange={(e) => setCefrB1Max(Number(e.target.value))}
+                    className="w-full accent-indigo-900 h-1.5 bg-slate-100 rounded-lg cursor-pointer"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-bold text-slate-700">
+                    <span>Ngưỡng B2 (Tối đa)</span>
+                    <span className="text-indigo-900">{cefrB2Max}% (Khoảng: {cefrB1Max + 1}% - {cefrB2Max}%)</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={cefrB1Max + 1}
+                    max="100"
+                    value={cefrB2Max}
+                    onChange={(e) => setCefrB2Max(Number(e.target.value))}
+                    className="w-full accent-indigo-900 h-1.5 bg-slate-100 rounded-lg cursor-pointer"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-bold text-slate-700">
+                    <span>Ngưỡng C1 (Tối đa)</span>
+                    <span className="text-indigo-900">{cefrC1Max}% (Khoảng: {cefrB2Max + 1}% - {cefrC1Max}%)</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={cefrB2Max + 1}
+                    max="100"
+                    value={cefrC1Max}
+                    onChange={(e) => setCefrC1Max(Number(e.target.value))}
+                    className="w-full accent-indigo-900 h-1.5 bg-slate-100 rounded-lg cursor-pointer"
+                  />
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-[10px] text-slate-500 font-medium">
+                  💡 Học sinh đạt kết quả trên <strong className="text-amber-600">{cefrC1Max}%</strong> sẽ tự động được xếp loại trình độ cao nhất <strong className="text-amber-600 font-extrabold">C2</strong>.
+                </div>
+              </div>
+            </div>
+
+            {/* Change Password Card */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide border-b border-slate-100 pb-3 flex items-center gap-2">
+                <Lock className="w-4 h-4 text-rose-600" /> Đổi mật khẩu Admin
+              </h3>
+              <form onSubmit={handleChangePassword} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">Mật khẩu hiện tại</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Nhập mật khẩu cũ để xác thực"
+                    value={oldPassword}
+                    onChange={(e) => setOldPassword(e.target.value)}
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">Mật khẩu mới</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Nhập mật khẩu mới"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase">Xác nhận mật khẩu</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Xác nhận mật khẩu mới"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs transition-all"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={passwordChangeLoading}
+                  className="bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white font-bold py-2.5 px-5 rounded-xl text-xs shadow-md transition-colors cursor-pointer mt-2 w-full"
+                >
+                  {passwordChangeLoading ? 'Đang cập nhật...' : 'Cập nhật mật khẩu'}
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       </div>
@@ -1739,6 +2236,7 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
             <h1 className="text-lg font-bold tracking-tight">Placement Test Administration</h1>
           </div>
           <div className="flex items-center gap-3">
+            <LanguageToggle />
             <button
               onClick={onBackToTest}
               className="text-xs bg-indigo-900 hover:bg-indigo-800 text-slate-200 font-bold py-2 px-4 rounded-lg border border-indigo-800 transition-colors cursor-pointer"
@@ -1758,39 +2256,89 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
       {/* Secondary Sub-navigation Tab Bar */}
       <div className="bg-white border-b border-slate-200 py-3 px-6 select-none shadow-xs shrink-0">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row gap-3 justify-between items-stretch sm:items-center">
-          <div className="flex gap-3">
+          <div className="flex gap-2 overflow-x-auto no-scrollbar scroll-smooth pb-1 sm:pb-0">
+            <button
+              onClick={() => {
+                setAdminTab('overview');
+                setViewingDetailId(null);
+              }}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                adminTab === 'overview'
+                  ? 'bg-indigo-900 text-white shadow-sm'
+                  : 'bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200'
+              }`}
+            >
+              <BarChart2 className="w-3.5 h-3.5" /> Tổng quan
+            </button>
+
+            <button
+              onClick={() => {
+                setAdminTab('exams');
+                setViewingDetailId(null);
+              }}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                adminTab === 'exams'
+                  ? 'bg-indigo-900 text-white shadow-sm'
+                  : 'bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" /> Kỳ thi ({exams.length})
+            </button>
+
             <button
               onClick={() => {
                 setAdminTab('candidates');
                 setViewingDetailId(null);
               }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 adminTab === 'candidates'
-                  ? 'bg-indigo-900 text-white shadow-sm shadow-indigo-900/15'
+                  ? 'bg-indigo-900 text-white shadow-sm'
                   : 'bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200'
               }`}
             >
-              <Users className="w-4 h-4" /> Danh sách thí sinh ({stats.total})
+              <Users className="w-3.5 h-3.5" /> Thí sinh ({stats.total})
             </button>
+
             <button
-              onClick={() => setAdminTab('materials')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              onClick={() => {
+                setAdminTab('materials');
+                setViewingDetailId(null);
+              }}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 adminTab === 'materials'
-                  ? 'bg-indigo-900 text-white shadow-sm shadow-indigo-900/15'
+                  ? 'bg-indigo-900 text-white shadow-sm'
                   : 'bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200'
               }`}
             >
-              <BookOpen className="w-4 h-4" /> Quản lý tài liệu ôn tập ({materials.length})
+              <BookOpen className="w-3.5 h-3.5" /> Tài liệu ({materials.length})
             </button>
+
             <button
-              onClick={() => setAdminTab('exams')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                adminTab === 'exams'
-                  ? 'bg-indigo-900 text-white shadow-sm shadow-indigo-900/15'
+              onClick={() => {
+                setAdminTab('settings');
+                setViewingDetailId(null);
+              }}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                adminTab === 'settings'
+                  ? 'bg-indigo-900 text-white shadow-sm'
                   : 'bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200'
               }`}
             >
-              <FileText className="w-4 h-4" /> Quản lý Đề thi ({exams.length})
+              <Settings className="w-3.5 h-3.5" /> Setting
+            </button>
+
+            <button
+              onClick={() => {
+                setAdminTab('logs');
+                setViewingDetailId(null);
+              }}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                adminTab === 'logs'
+                  ? 'bg-indigo-900 text-white shadow-sm'
+                  : 'bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" /> Nhật ký
             </button>
           </div>
           <p className="text-[10px] text-slate-400 font-mono self-end sm:self-auto">
@@ -1802,7 +2350,9 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 md:px-6 py-8 flex-grow space-y-8">
         
-        {adminTab === 'candidates' ? (
+        {adminTab === 'overview' ? (
+          renderOverviewTab()
+        ) : adminTab === 'candidates' ? (
           !viewingDetailId ? (
           <>
             {/* 1. METRICS ROW */}
@@ -2832,8 +3382,10 @@ export default function AdminPanel({ onBackToTest }: AdminPanelProps) {
           renderMaterialsManager()
         ) : adminTab === 'exams' ? (
           renderExamsManager()
-        ) : (
+        ) : adminTab === 'settings' ? (
           renderSettingsManager()
+        ) : (
+          renderLogsTab()
         )}
 
       </main>

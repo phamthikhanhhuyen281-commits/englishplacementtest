@@ -13,6 +13,17 @@ export interface AppSettings {
   teacherFacebook?: string;
   teacherWebsite?: string;
   teacherAddress?: string;
+  websiteName?: string;
+  primaryColor?: string;
+  secondaryColor?: string;
+  favicon?: string;
+  cefrThresholds?: {
+    a1Max: number;
+    a2Max: number;
+    b1Max: number;
+    b2Max: number;
+    c1Max: number;
+  };
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -27,6 +38,17 @@ const DEFAULT_SETTINGS: AppSettings = {
   teacherFacebook: 'https://facebook.com/teacher.anna',
   teacherWebsite: 'https://placement.edu.vn',
   teacherAddress: '123 Đường Láng, Đống Đa, Hà Nội',
+  websiteName: 'English Placement',
+  primaryColor: '#1e3a8a',
+  secondaryColor: '#3b82f6',
+  favicon: '',
+  cefrThresholds: {
+    a1Max: 19,
+    a2Max: 39,
+    b1Max: 59,
+    b2Max: 74,
+    c1Max: 89,
+  }
 };
 
 export const settingsService = {

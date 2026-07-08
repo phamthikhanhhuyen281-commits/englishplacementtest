@@ -362,6 +362,11 @@ export const candidateService = {
       throw new Error('Không tìm thấy thông tin thí sinh.');
     }
 
+    const isLocked = await this.checkIsPhoneLocked(candidate.phone);
+    if (isLocked || candidate.isLocked) {
+      throw new Error('Tài khoản/SĐT của bạn đã bị khóa bởi quản trị viên. Bạn không thể đăng nhập, thi hoặc xem tài liệu.');
+    }
+
     // Allow session starting even if submitted so they can view results/materials on the completed screen
     const exam = await examService.getExamById(candidate.examId);
 
@@ -539,6 +544,22 @@ export const candidateService = {
       throw new Error('Không tìm thấy thông tin thí sinh.');
     }
 
+    // Capture previous attempt in history to satisfy "Không xóa lịch sử"
+    const prevAttempt = {
+      submittedAt: candidate.submittedAt || new Date().toISOString(),
+      startedAt: candidate.startedAt,
+      scores: candidate.scores,
+      answers: candidate.answers,
+      logs: candidate.logs || [],
+      durationSeconds: candidate.durationSeconds || 0,
+      tabSwitches: candidate.tabSwitches || 0,
+      writingScore: candidate.writingScore || 0,
+      writingComment: candidate.writingComment || ''
+    };
+
+    const existingHistory = (candidate as any).history || [];
+    const updatedHistory = [...existingHistory, prevAttempt];
+
     const updateFields = {
       startedAt: null,
       submittedAt: null,
@@ -548,6 +569,8 @@ export const candidateService = {
       writingScore: 0,
       writingComment: '',
       scores: null,
+      isReset: true,
+      history: updatedHistory,
       answers: {
         listeningPart1: {},
         listeningPart2: {},
@@ -559,7 +582,7 @@ export const candidateService = {
         speakingPart2: { sp_1_audioPath: null, sp_2_audioPath: null, sp_3_audioPath: null },
         writing: {},
       },
-      logs: [{ timestamp: new Date().toISOString(), action: 'Giáo viên reset khôi phục bài thi.' }]
+      logs: [{ timestamp: new Date().toISOString(), action: 'Giáo viên reset khôi phục bài thi. Cho phép làm bài lại lần 2.' }]
     };
 
     await updateDoc(doc(db, 'candidates', id), updateFields);

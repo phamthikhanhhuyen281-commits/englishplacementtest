@@ -27,9 +27,6 @@ export default function ListeningSection({
 }: ListeningSectionProps) {
   const getProxiedUrl = (url?: string) => {
     if (!url) return '';
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      return `/api/audio-proxy?url=${encodeURIComponent(url)}`;
-    }
     return url;
   };
 
